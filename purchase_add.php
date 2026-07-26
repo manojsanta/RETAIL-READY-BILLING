@@ -45,7 +45,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $discountAmount = (float)($_POST['discount_amount'] ?? 0);
     $paidAmount = (float)($_POST['paid_amount'] ?? 0);
     $notes = sanitize($_POST['notes'] ?? '');
-    $supplierBillNo = sanitize($_POST['supplier_bill_no'] ?? '');
+    $supplierBillNo = trim($_POST['supplier_bill_no'] ?? '');
+
+    if ($partyId <= 0) {
+        setFlash('danger', 'Please select a supplier.');
+        header('Location: purchase_add.php');
+        exit;
+    }
+    if ($supplierBillNo === '') {
+        setFlash('danger', 'Please enter Supplier Bill No.');
+        header('Location: purchase_add.php');
+        exit;
+    }
+    if (!in_array($paymentMethod, ['cash', 'bank', 'upi', 'cheque', 'credit'])) {
+        setFlash('danger', 'Invalid payment method.');
+        header('Location: purchase_add.php');
+        exit;
+    }
+    $supplierBillNo = sanitize($supplierBillNo);
 
     $itemIds = $_POST['item_id'] ?? [];
     $qtys = $_POST['qty'] ?? [];
@@ -210,6 +227,7 @@ include 'header.php';
     .item-dropdown-row .id-col {
         font-size: 12px;
         color: #666;
+        text-align: right;
     }
     .item-dropdown-row .id-col.stock-low { color: #dc3545; font-weight: 600; }
     .item-dropdown-row .id-col.stock-ok { color: #28a745; }
@@ -238,18 +256,18 @@ include 'header.php';
                             <input type="date" name="date" class="form-control" value="<?= today() ?>" required>
                         </div>
                         <div class="col-md-4 position-relative">
-                            <label class="form-label fw-semibold">Supplier</label>
+                            <label class="form-label fw-semibold">Supplier <span class="text-danger">*</span></label>
                             <div class="input-group">
                                 <input type="text" id="supplierSearch" class="form-control" placeholder="Search supplier..." autocomplete="off">
-                                <input type="hidden" name="party_id" id="supplierId" value="">
+                                <input type="hidden" name="party_id" id="supplierId" value="" required>
                                 <button type="button" class="btn btn-outline-secondary" onclick="clearSupplier()">Clear</button>
                             </div>
                             <div id="supplierName" class="small text-muted mt-1" style="display:none;"></div>
                             <div id="supplierDropdown" class="supplier-search-dropdown"></div>
                         </div>
                         <div class="col-md-2">
-                            <label class="form-label fw-semibold">Supplier Bill No</label>
-                            <input type="text" name="supplier_bill_no" class="form-control" placeholder="Supplier's bill #">
+                            <label class="form-label fw-semibold">Supplier Bill No <span class="text-danger">*</span></label>
+                            <input type="text" name="supplier_bill_no" class="form-control" placeholder="Supplier's bill #" required>
                         </div>
                     </div>
 
@@ -267,23 +285,7 @@ include 'header.php';
                                     <th style="width:50px"></th>
                                 </tr>
                             </thead>
-                            <tbody id="itemsBody">
-                                <tr data-row="0">
-                                    <td>1</td>
-                                    <td class="position-relative">
-                                        <input type="text" class="form-control form-control-sm item-search" data-row="0" placeholder="Search item..." autocomplete="off">
-                                        <input type="hidden" name="item_id[]" class="item-id" value="">
-                                        <input type="hidden" name="tax_rate[]" class="tax-rate-hidden" value="0">
-                                        <div class="item-search-dropdown" id="itemDropdown0"></div>
-                                    </td>
-                                    <td><input type="number" name="qty[]" class="form-control form-control-sm qty" value="1" min="1"></td>
-                                    <td><input type="number" name="rate[]" class="form-control form-control-sm rate" value="0" step="0.01" min="0"></td>
-                                    <td><input type="number" name="item_discount[]" class="form-control form-control-sm item-discount" value="0" step="0.01" min="0"></td>
-                                    <td><input type="number" name="tax_rate_display[]" class="form-control form-control-sm tax-rate-display" value="0" step="0.01" min="0" max="100" readonly></td>
-                                    <td class="text-end fw-bold row-total">0.00</td>
-                                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove"><i class="fas fa-times"></i></button></td>
-                                </tr>
-                            </tbody>
+                            <tbody id="itemsBody"></tbody>
                         </table>
                     </div>
 
@@ -320,12 +322,13 @@ include 'header.php';
                             <input type="number" name="paid_amount" id="paidAmount" class="form-control" value="0" step="0.01" min="0">
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label fw-semibold">Payment Method</label>
-                            <select name="payment_method" class="form-select">
+                            <label class="form-label fw-semibold">Payment Method <span class="text-danger">*</span></label>
+                            <select name="payment_method" class="form-select" required>
                                 <option value="cash">Cash</option>
                                 <option value="bank">Bank Transfer</option>
                                 <option value="upi">UPI</option>
                                 <option value="cheque">Cheque</option>
+                                <option value="credit">Credit</option>
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -350,7 +353,28 @@ include 'header.php';
 
 <script>
 (function() {
-    var rowCount = 1;
+    var rowCount = 0;
+
+    function createItemRow(index) {
+        var tr = document.createElement('tr');
+        tr.dataset.row = index;
+        var displayNum = index + 1;
+        tr.innerHTML =
+            '<td>' + displayNum + '</td>' +
+            '<td class="position-relative">' +
+                '<input type="text" class="form-control form-control-sm item-search" data-row="' + index + '" placeholder="Search item..." autocomplete="off">' +
+                '<input type="hidden" name="item_id[]" class="item-id" value="">' +
+                '<input type="hidden" name="tax_rate[]" class="tax-rate-hidden" value="0">' +
+                '<div class="item-search-dropdown" id="itemDropdown' + index + '"></div>' +
+            '</td>' +
+            '<td><input type="number" name="qty[]" class="form-control form-control-sm qty" value="1" min="1"></td>' +
+            '<td><input type="number" name="rate[]" class="form-control form-control-sm rate" value="0" step="0.01" min="0"></td>' +
+            '<td><input type="number" name="item_discount[]" class="form-control form-control-sm item-discount" value="0" step="0.01" min="0"></td>' +
+            '<td><input type="number" name="tax_rate_display[]" class="form-control form-control-sm tax-rate-display" value="0" step="0.01" min="0" max="100" readonly></td>' +
+            '<td class="text-end fw-bold row-total">0.00</td>' +
+            '<td><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove"><i class="fas fa-times"></i></button></td>';
+        return tr;
+    }
 
     function positionDropdown(dropdown, inputEl) {
         if (dropdown.parentElement !== document.body) {
@@ -424,8 +448,20 @@ include 'header.php';
         supplierNameDisplay.style.display = 'none';
     };
 
-    // Item search per row
-    document.getElementById('itemsBody').addEventListener('input', function(e) {
+    // Generate initial row via JS (same path as addRow)
+    var tbody = document.getElementById('itemsBody');
+    tbody.appendChild(createItemRow(0));
+    rowCount = 1;
+
+    // Item search per row — input
+    tbody.addEventListener('input', function(e) {
+        if (e.target.classList.contains('item-search')) {
+            handleItemSearch(e.target);
+        }
+    });
+
+    // Show dropdown on focus (empty query shows all items)
+    tbody.addEventListener('focusin', function(e) {
         if (e.target.classList.contains('item-search')) {
             handleItemSearch(e.target);
         }
@@ -452,7 +488,6 @@ include 'header.php';
             input._dropdown = input.closest('tr').querySelector('.item-search-dropdown');
         }
         var dropdown = input._dropdown;
-        if (q.length < 1) { dropdown.style.setProperty('display', 'none', 'important'); return; }
         input._timer = setTimeout(function() {
             fetch('purchase_add.php?ajax=search_items&q=' + encodeURIComponent(q))
                 .then(function(r) { return r.json(); })
@@ -538,7 +573,7 @@ include 'header.php';
     }
 
     // Event delegation for row inputs
-    document.getElementById('itemsBody').addEventListener('change', function(e) {
+    tbody.addEventListener('change', function(e) {
         if (e.target.classList.contains('qty') || e.target.classList.contains('rate') ||
             e.target.classList.contains('item-discount') || e.target.classList.contains('tax-rate-display')) {
             recalcRow(e.target.closest('tr'));
@@ -546,7 +581,7 @@ include 'header.php';
         }
     });
 
-    document.getElementById('itemsBody').addEventListener('input', function(e) {
+    tbody.addEventListener('input', function(e) {
         if (e.target.classList.contains('qty') || e.target.classList.contains('rate') ||
             e.target.classList.contains('item-discount')) {
             recalcRow(e.target.closest('tr'));
@@ -559,30 +594,12 @@ include 'header.php';
 
     // Add row
     document.getElementById('addRow').addEventListener('click', function() {
-        var tbody = document.getElementById('itemsBody');
-        var newRow = document.createElement('tr');
-        newRow.dataset.row = rowCount;
-        var r = rowCount + 1;
-        newRow.innerHTML =
-            '<td>' + r + '</td>' +
-            '<td class="position-relative">' +
-                '<input type="text" class="form-control form-control-sm item-search" data-row="' + rowCount + '" placeholder="Search item..." autocomplete="off">' +
-                '<input type="hidden" name="item_id[]" class="item-id" value="">' +
-                '<input type="hidden" name="tax_rate[]" class="tax-rate-hidden" value="0">' +
-                '<div class="item-search-dropdown" id="itemDropdown' + rowCount + '"></div>' +
-            '</td>' +
-            '<td><input type="number" name="qty[]" class="form-control form-control-sm qty" value="1" min="1"></td>' +
-            '<td><input type="number" name="rate[]" class="form-control form-control-sm rate" value="0" step="0.01" min="0"></td>' +
-            '<td><input type="number" name="item_discount[]" class="form-control form-control-sm item-discount" value="0" step="0.01" min="0"></td>' +
-            '<td><input type="number" name="tax_rate_display[]" class="form-control form-control-sm tax-rate-display" value="0" step="0.01" min="0" max="100" readonly></td>' +
-            '<td class="text-end fw-bold row-total">0.00</td>' +
-            '<td><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove"><i class="fas fa-times"></i></button></td>';
-        tbody.appendChild(newRow);
+        tbody.appendChild(createItemRow(rowCount));
         rowCount++;
     });
 
     // Remove row
-    document.getElementById('itemsBody').addEventListener('click', function(e) {
+    tbody.addEventListener('click', function(e) {
         if (e.target.closest('.remove-row')) {
             var rows = document.querySelectorAll('#itemsBody tr');
             if (rows.length > 1) {
@@ -599,6 +616,27 @@ include 'header.php';
             row.querySelector('td:first-child').textContent = idx + 1;
         });
     }
+
+    // Form submit validation
+    document.getElementById('purchaseForm').addEventListener('submit', function(e) {
+        var errors = [];
+        if (!document.getElementById('supplierId').value) {
+            errors.push('Please select a supplier.');
+        }
+        if (!document.querySelector('input[name="supplier_bill_no"]').value.trim()) {
+            errors.push('Please enter Supplier Bill No.');
+        }
+        var itemIds = document.querySelectorAll('.item-id');
+        var hasItem = false;
+        itemIds.forEach(function(input) { if (input.value) hasItem = true; });
+        if (!hasItem) {
+            errors.push('Please add at least one item.');
+        }
+        if (errors.length > 0) {
+            e.preventDefault();
+            alert(errors.join('\n'));
+        }
+    });
 })();
 </script>
 
