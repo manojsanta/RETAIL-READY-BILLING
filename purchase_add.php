@@ -157,11 +157,12 @@ include 'header.php';
         box-shadow: 0 4px 12px rgba(0,0,0,.15);
         max-height: 250px;
         overflow-y: auto;
-        display: none;
+        display: none !important;
     }
     .item-search-dropdown { width: 520px !important; }
     .supplier-search-dropdown { width: 350px !important; }
     .item-search-dropdown .dropdown-item, .supplier-search-dropdown .dropdown-item {
+        display: block;
         padding: 8px 12px;
         cursor: pointer;
         font-size: 13px;
@@ -356,13 +357,20 @@ include 'header.php';
             document.body.appendChild(dropdown);
         }
         dropdown._ownerInput = inputEl;
+        dropdown.style.setProperty('position', 'fixed', 'important');
+        dropdown.style.setProperty('display', 'block', 'important');
+        dropdown.style.setProperty('width', '520px', 'important');
+        dropdown.style.setProperty('z-index', '1080', 'important');
+        dropdown.style.top = '0';
+        dropdown.style.left = '0';
+        dropdown.style.right = 'auto';
         var rect = inputEl.getBoundingClientRect();
         var vw = window.innerWidth;
         var top = rect.bottom + 2;
         var left = rect.left;
         dropdown.style.top = top + 'px';
         dropdown.style.left = left + 'px';
-        dropdown.style.display = 'block';
+        void dropdown.offsetWidth;
         var ddWidth = dropdown.offsetWidth;
         if (left + ddWidth > vw - 8) {
             left = vw - ddWidth - 8;
@@ -381,12 +389,12 @@ include 'header.php';
     supplierSearch.addEventListener('input', function() {
         clearTimeout(supplierTimer);
         var q = this.value.trim();
-        if (q.length < 1) { supplierDropdown.style.display = 'none'; return; }
+        if (q.length < 1) { supplierDropdown.style.setProperty('display', 'none', 'important'); return; }
         supplierTimer = setTimeout(function() {
             fetch('purchase_add.php?ajax=search_suppliers&q=' + encodeURIComponent(q))
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
-                    if (data.length === 0) { supplierDropdown.style.display = 'none'; return; }
+                    if (data.length === 0) { supplierDropdown.style.setProperty('display', 'none', 'important'); return; }
                     var html = '';
                     data.forEach(function(s) {
                         html += '<div class="dropdown-item px-3 py-2" data-id="' + s.id + '" data-name="' + s.name.replace(/"/g, '&quot;') + '">';
@@ -403,7 +411,7 @@ include 'header.php';
                             supplierSearch.value = this.dataset.name;
                             supplierNameDisplay.textContent = this.dataset.name;
                             supplierNameDisplay.style.display = 'block';
-                            supplierDropdown.style.display = 'none';
+                            supplierDropdown.style.setProperty('display', 'none', 'important');
                         });
                     });
                 });
@@ -444,12 +452,12 @@ include 'header.php';
             input._dropdown = input.closest('tr').querySelector('.item-search-dropdown');
         }
         var dropdown = input._dropdown;
-        if (q.length < 1) { dropdown.style.display = 'none'; return; }
+        if (q.length < 1) { dropdown.style.setProperty('display', 'none', 'important'); return; }
         input._timer = setTimeout(function() {
             fetch('purchase_add.php?ajax=search_items&q=' + encodeURIComponent(q))
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
-                    if (data.length === 0) { dropdown.style.display = 'none'; return; }
+                    if (data.length === 0) { dropdown.style.setProperty('display', 'none', 'important'); return; }
                     var html = '<div class="item-dropdown-header"><span>Name</span><span>SKU</span><span class="text-end">Price</span><span class="text-end">Stock</span></div>';
                     data.forEach(function(item) {
                         var stock = item.current_stock || 0;
@@ -463,6 +471,7 @@ include 'header.php';
                         html += '</div></div>';
                     });
                     dropdown.innerHTML = html;
+                    dropdown.style.setProperty('display', 'block', 'important');
                     positionDropdown(dropdown, input);
                 });
         }, 300);
@@ -474,7 +483,7 @@ include 'header.php';
         row.querySelector('.rate').value = parseFloat(data.purchase_price).toFixed(2);
         row.querySelector('.tax-rate-hidden').value = parseFloat(data.purchase_tax_rate) || 0;
         row.querySelector('.tax-rate-display').value = parseFloat(data.purchase_tax_rate) || 0;
-        document.querySelectorAll('.item-search-dropdown').forEach(function(d) { d.style.display = 'none'; });
+        document.querySelectorAll('.item-search-dropdown').forEach(function(d) { d.style.setProperty('display', 'none', 'important'); });
         recalcRow(row);
         recalcAll();
     }
@@ -486,7 +495,7 @@ include 'header.php';
         }
         if (!e.target.classList.contains('item-search') && !e.target.classList.contains('supplier-search')) {
             document.querySelectorAll('.item-search-dropdown, .supplier-search-dropdown').forEach(function(d) {
-                d.style.display = 'none';
+                d.style.setProperty('display', 'none', 'important');
             });
         }
     });
