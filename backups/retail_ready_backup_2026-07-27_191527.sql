@@ -1,5 +1,5 @@
 -- Retail Ready Database Backup
--- Date: 2026-07-26 20:27:11
+-- Date: 2026-07-27 19:15:27
 -- Database: retail_ready
 -- =============================================
 
@@ -261,8 +261,8 @@ CREATE TABLE `financial_years` (
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 LOCK TABLES `financial_years` WRITE;
-INSERT INTO `financial_years` (`id`, `name`, `start_date`, `end_date`, `is_active`, `created_at`, `updated_at`) VALUES ('1', 'FY 2025-26', '2025-04-01', '2026-03-31', '0', '2026-07-25 23:55:33', '2026-07-26 00:06:20');
-INSERT INTO `financial_years` (`id`, `name`, `start_date`, `end_date`, `is_active`, `created_at`, `updated_at`) VALUES ('2', 'FY 2026-27', '2026-04-01', '2027-03-31', '1', '2026-07-25 23:55:33', '2026-07-26 00:06:20');
+INSERT INTO `financial_years` (`id`, `name`, `start_date`, `end_date`, `is_active`, `created_at`, `updated_at`) VALUES ('1', 'FY 2025-26', '2025-04-01', '2026-03-31', '1', '2026-07-25 23:55:33', '2026-07-27 22:44:55');
+INSERT INTO `financial_years` (`id`, `name`, `start_date`, `end_date`, `is_active`, `created_at`, `updated_at`) VALUES ('2', 'FY 2026-27', '2026-04-01', '2027-03-31', '0', '2026-07-25 23:55:33', '2026-07-27 22:44:55');
 UNLOCK TABLES;
 
 -- -------------------------------------------
@@ -348,8 +348,8 @@ CREATE TABLE `items` (
 ) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 LOCK TABLES `items` WRITE;
-INSERT INTO `items` (`id`, `name`, `sku`, `barcode`, `category_id`, `description`, `unit`, `purchase_price`, `purchase_price_with_tax`, `sale_price`, `sale_price_with_tax`, `tax_rate_id`, `purchase_tax_rate_id`, `purchase_tax_mode`, `sale_tax_mode`, `hsn_code`, `min_stock`, `current_stock`, `opening_stock`, `image`, `status`, `created_at`, `updated_at`) VALUES ('4', '32gb pendrive', 'STO-00001', '', '10', '', 'Pcs', '296.61', '350.00', '466.10', '550.00', '7', '7', 'inclusive', 'inclusive', '', '10', '2', '0', NULL, '1', '2026-07-26 14:55:06', '2026-07-27 01:45:36');
-INSERT INTO `items` (`id`, `name`, `sku`, `barcode`, `category_id`, `description`, `unit`, `purchase_price`, `purchase_price_with_tax`, `sale_price`, `sale_price_with_tax`, `tax_rate_id`, `purchase_tax_rate_id`, `purchase_tax_mode`, `sale_tax_mode`, `hsn_code`, `min_stock`, `current_stock`, `opening_stock`, `image`, `status`, `created_at`, `updated_at`) VALUES ('5', 'vga cable', 'CAB-00001', '', '9', '', 'Pcs', '50.00', '59.00', '101.69', '120.00', '7', '7', 'exclusive', 'inclusive', '', '10', '5', '0', NULL, '1', '2026-07-26 15:01:43', '2026-07-27 01:45:36');
+INSERT INTO `items` (`id`, `name`, `sku`, `barcode`, `category_id`, `description`, `unit`, `purchase_price`, `purchase_price_with_tax`, `sale_price`, `sale_price_with_tax`, `tax_rate_id`, `purchase_tax_rate_id`, `purchase_tax_mode`, `sale_tax_mode`, `hsn_code`, `min_stock`, `current_stock`, `opening_stock`, `image`, `status`, `created_at`, `updated_at`) VALUES ('4', '32gb pendrive', 'STO-00001', '', '10', '', 'Pcs', '296.61', '350.00', '466.10', '550.00', '7', '7', 'inclusive', 'inclusive', '', '10', '10', '0', NULL, '1', '2026-07-26 14:55:06', '2026-07-28 00:42:11');
+INSERT INTO `items` (`id`, `name`, `sku`, `barcode`, `category_id`, `description`, `unit`, `purchase_price`, `purchase_price_with_tax`, `sale_price`, `sale_price_with_tax`, `tax_rate_id`, `purchase_tax_rate_id`, `purchase_tax_mode`, `sale_tax_mode`, `hsn_code`, `min_stock`, `current_stock`, `opening_stock`, `image`, `status`, `created_at`, `updated_at`) VALUES ('5', 'vga cable', 'CAB-00001', '', '9', '', 'Pcs', '50.00', '59.00', '101.69', '120.00', '7', '7', 'exclusive', 'inclusive', '', '10', '0', '0', NULL, '1', '2026-07-26 15:01:43', '2026-07-27 23:09:13');
 UNLOCK TABLES;
 
 -- -------------------------------------------
@@ -465,7 +465,12 @@ CREATE TABLE `payments_out` (
   CONSTRAINT `fk_payments_out_party` FOREIGN KEY (`party_id`) REFERENCES `parties` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_payments_out_purchase` FOREIGN KEY (`purchase_id`) REFERENCES `purchases` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_payments_out_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+LOCK TABLES `payments_out` WRITE;
+INSERT INTO `payments_out` (`id`, `payment_no`, `party_id`, `purchase_id`, `date`, `amount`, `payment_method`, `reference_no`, `notes`, `user_id`, `created_at`) VALUES ('2', 'PAY-00001', '1', '2', '2026-07-27', '35.00', 'credit', NULL, NULL, '1', '2026-07-28 00:08:38');
+INSERT INTO `payments_out` (`id`, `payment_no`, `party_id`, `purchase_id`, `date`, `amount`, `payment_method`, `reference_no`, `notes`, `user_id`, `created_at`) VALUES ('7', 'PAY-00002', '1', '4', '2026-07-27', '123.00', 'credit', NULL, NULL, '1', '2026-07-28 00:35:47');
+UNLOCK TABLES;
 
 -- -------------------------------------------
 -- Table: `purchase_items`
@@ -487,11 +492,13 @@ CREATE TABLE `purchase_items` (
   KEY `idx_purchase_items_item_id` (`item_id`),
   CONSTRAINT `fk_purchase_items_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_purchase_items_purchase` FOREIGN KEY (`purchase_id`) REFERENCES `purchases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=23 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 LOCK TABLES `purchase_items` WRITE;
-INSERT INTO `purchase_items` (`id`, `purchase_id`, `item_id`, `qty`, `rate`, `discount`, `tax_rate`, `tax_amount`, `total`, `created_at`) VALUES ('1', '1', '4', '2', '296.61', '0.00', '18.00', '106.78', '700.00', '2026-07-27 01:45:36');
-INSERT INTO `purchase_items` (`id`, `purchase_id`, `item_id`, `qty`, `rate`, `discount`, `tax_rate`, `tax_amount`, `total`, `created_at`) VALUES ('2', '1', '5', '5', '50.00', '0.00', '18.00', '45.00', '295.00', '2026-07-27 01:45:36');
+INSERT INTO `purchase_items` (`id`, `purchase_id`, `item_id`, `qty`, `rate`, `discount`, `tax_rate`, `tax_amount`, `total`, `created_at`) VALUES ('11', '2', '4', '1', '296.61', '0.00', '18.00', '53.39', '350.00', '2026-07-28 00:08:38');
+INSERT INTO `purchase_items` (`id`, `purchase_id`, `item_id`, `qty`, `rate`, `discount`, `tax_rate`, `tax_amount`, `total`, `created_at`) VALUES ('15', '3', '4', '2', '296.61', '0.00', '18.00', '106.78', '700.00', '2026-07-28 00:13:35');
+INSERT INTO `purchase_items` (`id`, `purchase_id`, `item_id`, `qty`, `rate`, `discount`, `tax_rate`, `tax_amount`, `total`, `created_at`) VALUES ('21', '4', '4', '1', '296.61', '0.00', '18.00', '53.39', '350.00', '2026-07-28 00:35:47');
+INSERT INTO `purchase_items` (`id`, `purchase_id`, `item_id`, `qty`, `rate`, `discount`, `tax_rate`, `tax_amount`, `total`, `created_at`) VALUES ('22', '5', '4', '6', '296.61', '0.00', '18.00', '320.34', '2100.00', '2026-07-28 00:42:11');
 UNLOCK TABLES;
 
 -- -------------------------------------------
@@ -513,7 +520,7 @@ CREATE TABLE `purchase_return_items` (
   KEY `idx_purchase_return_items_item_id` (`item_id`),
   CONSTRAINT `fk_purchase_return_items_item` FOREIGN KEY (`item_id`) REFERENCES `items` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_purchase_return_items_return` FOREIGN KEY (`return_id`) REFERENCES `purchase_returns` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -------------------------------------------
 -- Table: `purchase_returns`
@@ -542,7 +549,7 @@ CREATE TABLE `purchase_returns` (
   CONSTRAINT `fk_purchase_returns_party` FOREIGN KEY (`party_id`) REFERENCES `parties` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_purchase_returns_purchase` FOREIGN KEY (`purchase_id`) REFERENCES `purchases` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_purchase_returns_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -------------------------------------------
 -- Table: `purchases`
@@ -576,10 +583,13 @@ CREATE TABLE `purchases` (
   KEY `idx_purchases_status` (`status`),
   CONSTRAINT `fk_purchases_party` FOREIGN KEY (`party_id`) REFERENCES `parties` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_purchases_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 LOCK TABLES `purchases` WRITE;
-INSERT INTO `purchases` (`id`, `bill_no`, `party_id`, `user_id`, `date`, `subtotal`, `tax_amount`, `discount_amount`, `total`, `paid_amount`, `due_amount`, `payment_status`, `payment_method`, `notes`, `supplier_bill_no`, `status`, `created_at`, `updated_at`) VALUES ('1', 'PUR-00001', '1', '1', '2026-07-26', '843.22', '151.78', '0.00', '995.00', '0.00', '995.00', 'unpaid', 'credit', '', '3', 'received', '2026-07-27 01:45:36', '2026-07-27 01:45:36');
+INSERT INTO `purchases` (`id`, `bill_no`, `party_id`, `user_id`, `date`, `subtotal`, `tax_amount`, `discount_amount`, `total`, `paid_amount`, `due_amount`, `payment_status`, `payment_method`, `notes`, `supplier_bill_no`, `status`, `created_at`, `updated_at`) VALUES ('2', 'PUR-00001', '1', '1', '2026-07-27', '296.61', '53.39', '0.00', '350.00', '35.00', '315.00', 'partial', 'credit', '', '3', 'received', '2026-07-27 23:55:53', '2026-07-28 00:08:38');
+INSERT INTO `purchases` (`id`, `bill_no`, `party_id`, `user_id`, `date`, `subtotal`, `tax_amount`, `discount_amount`, `total`, `paid_amount`, `due_amount`, `payment_status`, `payment_method`, `notes`, `supplier_bill_no`, `status`, `created_at`, `updated_at`) VALUES ('3', 'PUR-00002', '1', '1', '2026-07-27', '593.22', '106.78', '0.00', '700.00', '0.00', '700.00', 'unpaid', 'credit', '', '4', 'received', '2026-07-28 00:09:26', '2026-07-28 00:13:35');
+INSERT INTO `purchases` (`id`, `bill_no`, `party_id`, `user_id`, `date`, `subtotal`, `tax_amount`, `discount_amount`, `total`, `paid_amount`, `due_amount`, `payment_status`, `payment_method`, `notes`, `supplier_bill_no`, `status`, `created_at`, `updated_at`) VALUES ('4', 'PUR-00003', '1', '1', '2026-07-27', '296.61', '53.39', '0.00', '350.00', '123.00', '227.00', 'partial', 'credit', '', '3', 'received', '2026-07-28 00:28:58', '2026-07-28 00:35:47');
+INSERT INTO `purchases` (`id`, `bill_no`, `party_id`, `user_id`, `date`, `subtotal`, `tax_amount`, `discount_amount`, `total`, `paid_amount`, `due_amount`, `payment_status`, `payment_method`, `notes`, `supplier_bill_no`, `status`, `created_at`, `updated_at`) VALUES ('5', 'PUR-00004', '1', '1', '2026-07-27', '1779.66', '320.34', '0.00', '2100.00', '0.00', '2100.00', 'unpaid', 'credit', '', '4', 'received', '2026-07-28 00:42:11', '2026-07-28 00:42:11');
 UNLOCK TABLES;
 
 -- -------------------------------------------
@@ -700,7 +710,7 @@ CREATE TABLE `settings` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_settings_setting_key` (`setting_key`)
-) ENGINE=InnoDB AUTO_INCREMENT=41 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=43 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 LOCK TABLES `settings` WRITE;
 INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `created_at`, `updated_at`) VALUES ('1', 'company_name', 'Webora Software Solution', '2026-07-25 11:56:25', '2026-07-25 15:22:17');
@@ -713,7 +723,8 @@ INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `created_at`, `upd
 INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `created_at`, `updated_at`) VALUES ('8', 'default_tax_rate', '18', '2026-07-25 11:56:25', '2026-07-25 11:56:25');
 INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `created_at`, `updated_at`) VALUES ('9', 'invoice_footer_text', 'Thank you for your business!', '2026-07-25 11:56:25', '2026-07-25 11:56:25');
 INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `created_at`, `updated_at`) VALUES ('28', 'opening_cash_2', '150000.00', '2026-07-26 00:49:36', '2026-07-26 01:16:04');
-INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `created_at`, `updated_at`) VALUES ('36', 'cash_balance', '150000.00', '2026-07-26 00:57:52', '2026-07-26 01:16:04');
+INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `created_at`, `updated_at`) VALUES ('36', 'cash_balance', '0.00', '2026-07-26 00:57:52', '2026-07-27 23:09:42');
+INSERT INTO `settings` (`id`, `setting_key`, `setting_value`, `created_at`, `updated_at`) VALUES ('41', 'opening_cash_1', '0.00', '2026-07-27 23:09:42', '2026-07-27 23:09:42');
 UNLOCK TABLES;
 
 -- -------------------------------------------
