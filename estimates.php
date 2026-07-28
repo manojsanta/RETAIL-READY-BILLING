@@ -775,6 +775,7 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
                             <td class="text-center">
                                 <div class="btn-group btn-group-sm">
                                     <a href="estimates.php?mode=form&edit=<?= $est['id'] ?>" class="btn btn-outline-primary" title="Edit"><i class="fas fa-edit"></i></a>
+                                    <button type="button" class="btn btn-outline-secondary" title="PDF" onclick="window.open('pdf_estimate.php?id=<?= $est['id'] ?>','_blank')"><i class="fas fa-file-pdf"></i></button>
                                     <?php if ($est['status'] === 'accepted'): ?>
                                         <a href="estimates.php?convert=<?= $est['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-success" title="Convert to Sale" onclick="return confirm('Convert this estimate to a sale invoice?')"><i class="fas fa-exchange-alt"></i></a>
                                     <?php endif; ?>
