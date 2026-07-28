@@ -182,7 +182,7 @@ $html = '
     <div class="footer"><p>' . sanitize($footerText) . '</p></div>
 </body></html>';
 
-ob_clean();
+while (ob_get_level()) ob_end_clean();
 
 $options = new Options();
 $options->set('isRemoteEnabled', true);
