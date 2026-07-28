@@ -192,7 +192,7 @@ include 'header.php';
                             <?php endif; ?>
                         </td>
                         <td>
-                            <?php if (($party['status'] ?? 'active') === 'active'): ?>
+                            <?php if (($party['status'] ?? 1) == 1): ?>
                                 <span class="badge bg-success">Active</span>
                             <?php else: ?>
                                 <span class="badge bg-secondary">Inactive</span>

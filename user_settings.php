@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($delId == $_SESSION['user_id']) {
                 setFlash('danger', 'You cannot delete your own account.');
             } else {
-                $adminCount = count("SELECT COUNT(*) FROM users WHERE role = 'admin'");
+                $adminCount = dbCount("SELECT COUNT(*) FROM users WHERE role = 'admin'");
                 $delUser = fetch("SELECT role FROM users WHERE id = ?", [$delId]);
                 if ($delUser && $delUser['role'] === 'admin' && $adminCount <= 1) {
                     setFlash('danger', 'Cannot delete the last admin user.');

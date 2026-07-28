@@ -58,7 +58,7 @@ $summary = fetch("SELECT
     FROM sales s $whereSql", $params);
 
 // Total count for pagination
-$total = count("SELECT COUNT(*) FROM sales s $whereSql", $params);
+$total = dbCount("SELECT COUNT(*) FROM sales s $whereSql", $params);
 $pagination = paginate($total, $perPage, $page);
 
 // Sales list

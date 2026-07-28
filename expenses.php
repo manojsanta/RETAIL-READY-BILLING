@@ -39,6 +39,10 @@ $perPage = 20;
 $where = [];
 $params = [];
 
+$fy = currentFY();
+if (!empty($fy['start'])) { $where[] = "e.date >= ?"; $params[] = $fy['start']; }
+if (!empty($fy['end'])) { $where[] = "e.date <= ?"; $params[] = $fy['end']; }
+
 if ($filterFrom !== '') {
     $where[] = "e.date >= ?";
     $params[] = dateDB($filterFrom);

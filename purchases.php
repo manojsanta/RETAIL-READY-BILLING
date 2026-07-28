@@ -30,7 +30,10 @@ $search = trim($_GET['search'] ?? '');
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 20;
 
+$fy = currentFY();
 $where = []; $params = [];
+if (!empty($fy['start'])) { $where[] = "p.date >= ?"; $params[] = $fy['start']; }
+if (!empty($fy['end'])) { $where[] = "p.date <= ?"; $params[] = $fy['end']; }
 if ($dateFrom !== '') { $where[] = "p.date >= ?"; $params[] = dateDB($dateFrom); }
 if ($dateTo !== '') { $where[] = "p.date <= ?"; $params[] = dateDB($dateTo); }
 if ($filterStatus !== '' && in_array($filterStatus, ['paid','unpaid','partial'])) { $where[] = "p.payment_status = ?"; $params[] = $filterStatus; }
@@ -42,10 +45,15 @@ $pagination = paginate($totalItems, $perPage, $page);
 
 $purchases = fetchAll("SELECT p.*, pt.name AS supplier_name FROM purchases p LEFT JOIN parties pt ON p.party_id = pt.id $whereClause ORDER BY p.date DESC, p.id DESC LIMIT {$pagination['per_page']} OFFSET {$pagination['offset']}", $params);
 
-$totalPurchases = (float) query("SELECT COALESCE(SUM(total), 0) FROM purchases")->fetchColumn();
-$totalPaid = (float) query("SELECT COALESCE(SUM(paid_amount), 0) FROM purchases")->fetchColumn();
-$totalPayable = (float) query("SELECT COALESCE(SUM(due_amount), 0) FROM purchases WHERE payment_status != 'paid'")->fetchColumn();
-$todayPurchases = (float) query("SELECT COALESCE(SUM(total), 0) FROM purchases WHERE date = ?", [today()])->fetchColumn();
+$fyWhere = []; $fyParams = [];
+if (!empty($fy['start'])) { $fyWhere[] = "date >= ?"; $fyParams[] = $fy['start']; }
+if (!empty($fy['end'])) { $fyWhere[] = "date <= ?"; $fyParams[] = $fy['end']; }
+$fyClause = $fyWhere ? 'WHERE ' . implode(' AND ', $fyWhere) : '';
+
+$totalPurchases = (float) query("SELECT COALESCE(SUM(total), 0) FROM purchases $fyClause", $fyParams)->fetchColumn();
+$totalPaid = (float) query("SELECT COALESCE(SUM(paid_amount), 0) FROM purchases $fyClause", $fyParams)->fetchColumn();
+$totalPayable = (float) query("SELECT COALESCE(SUM(due_amount), 0) FROM purchases WHERE payment_status != 'paid'" . ($fyClause ? ' AND ' . substr($fyClause, 6) : ''), $fyParams)->fetchColumn();
+$todayPurchases = (float) query("SELECT COALESCE(SUM(total), 0) FROM purchases WHERE date = ?" . ($fyClause ? ' AND ' . substr($fyClause, 6) : ''), array_merge([today()], $fyParams))->fetchColumn();
 
 $pageTitle = 'Purchase Bills';
 include 'header.php';

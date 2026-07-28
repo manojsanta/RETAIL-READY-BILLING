@@ -55,7 +55,7 @@ $summary = fetch("SELECT
     COALESCE(SUM(pu.due_amount), 0) as total_payable
     FROM purchases pu $whereSql", $params);
 
-$total = count("SELECT COUNT(*) FROM purchases pu $whereSql", $params);
+$total = dbCount("SELECT COUNT(*) FROM purchases pu $whereSql", $params);
 $pagination = paginate($total, $perPage, $page);
 
 $purchases = fetchAll("SELECT pu.*, p.name as party_name,

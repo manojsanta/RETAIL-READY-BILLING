@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'delete') {
         $delId = intval($_POST['tax_id'] ?? 0);
         if ($delId > 0) {
-            $used = count("SELECT COUNT(*) FROM items WHERE tax_rate_id = ?", [$delId]);
+            $used = dbCount("SELECT COUNT(*) FROM items WHERE tax_rate_id = ?", [$delId]);
             if ($used > 0) {
                 setFlash('danger', 'Cannot delete: this tax rate is assigned to one or more items.');
             } else {

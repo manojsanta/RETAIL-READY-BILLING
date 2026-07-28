@@ -76,50 +76,7 @@ $companyName = $company['name'] ?? 'Retail Ready';
         <div class="nav-item<?php echo $current_page === 'dashboard.php' ? ' active' : ''; ?>">
             <a href="dashboard.php"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
         </div>
-
-        <div class="nav-section">Sale</div>
-        <div class="nav-item has-sub<?php echo in_array($current_page, ['sales.php','sale_add.php','payment_in.php','sale_return.php']) ? ' open' : ''; ?>">
-            <button class="nav-toggle" onclick="toggleSub(this)">
-                <i class="fas fa-file-invoice-dollar"></i><span>Sales</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
-            </button>
-            <div class="submenu">
-                <div class="nav-item<?php echo $current_page === 'sales.php' ? ' active' : ''; ?>">
-                    <a href="sales.php"><i class="fas fa-list"></i><span>Sale Invoices</span></a>
-                </div>
-                <div class="nav-item<?php echo $current_page === 'sale_add.php' ? ' active' : ''; ?>">
-                    <a href="sale_add.php"><i class="fas fa-plus-circle"></i><span>New Sale</span></a>
-                </div>
-                <div class="nav-item<?php echo $current_page === 'payment_in.php' ? ' active' : ''; ?>">
-                    <a href="payment_in.php"><i class="fas fa-hand-holding-usd"></i><span>Payment In</span></a>
-                </div>
-                <div class="nav-item<?php echo $current_page === 'sale_return.php' ? ' active' : ''; ?>">
-                    <a href="sale_return.php"><i class="fas fa-undo"></i><span>Sale Returns</span></a>
-                </div>
-            </div>
-        </div>
-
-        <div class="nav-section">Purchase</div>
-        <div class="nav-item has-sub<?php echo in_array($current_page, ['purchases.php','purchase_add.php','payment_out.php','purchase_return.php']) ? ' open' : ''; ?>">
-            <button class="nav-toggle" onclick="toggleSub(this)">
-                <i class="fas fa-shopping-cart"></i><span>Purchases</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
-            </button>
-            <div class="submenu">
-                <div class="nav-item<?php echo $current_page === 'purchases.php' ? ' active' : ''; ?>">
-                    <a href="purchases.php"><i class="fas fa-list"></i><span>Purchase Bills</span></a>
-                </div>
-                <div class="nav-item<?php echo $current_page === 'purchase_add.php' ? ' active' : ''; ?>">
-                    <a href="purchase_add.php"><i class="fas fa-plus-circle"></i><span>New Purchase</span></a>
-                </div>
-                <div class="nav-item<?php echo $current_page === 'payment_out.php' ? ' active' : ''; ?>">
-                    <a href="payment_out.php"><i class="fas fa-money-bill-wave"></i><span>Payment Out</span></a>
-                </div>
-                <div class="nav-item<?php echo $current_page === 'purchase_return.php' ? ' active' : ''; ?>">
-                    <a href="purchase_return.php"><i class="fas fa-undo-alt"></i><span>Purchase Returns</span></a>
-                </div>
-            </div>
-        </div>
-
-        <div class="nav-section">Parties</div>
+<div class="nav-section">Parties</div>
         <div class="nav-item has-sub<?php echo in_array($current_page, ['parties.php','party_add.php']) ? ' open' : ''; ?>">
             <button class="nav-toggle" onclick="toggleSub(this)">
                 <i class="fas fa-users"></i><span>Parties</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
@@ -133,7 +90,6 @@ $companyName = $company['name'] ?? 'Retail Ready';
                 </div>
             </div>
         </div>
-
         <div class="nav-section">Items</div>
         <div class="nav-item has-sub<?php echo in_array($current_page, ['items.php','item_add.php','categories.php','units.php','unit_add.php','stock.php']) ? ' open' : ''; ?>">
             <button class="nav-toggle" onclick="toggleSub(this)">
@@ -157,7 +113,52 @@ $companyName = $company['name'] ?? 'Retail Ready';
                 </div>
             </div>
         </div>
+<div class="nav-section">Purchase</div>
+        <div class="nav-item has-sub<?php echo in_array($current_page, ['purchases.php','purchase_add.php','payment_out.php','purchase_return.php']) ? ' open' : ''; ?>">
+            <button class="nav-toggle" onclick="toggleSub(this)">
+                <i class="fas fa-shopping-cart"></i><span>Purchases</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
+            </button>
+            <div class="submenu">
+                <div class="nav-item<?php echo $current_page === 'purchases.php' ? ' active' : ''; ?>">
+                    <a href="purchases.php"><i class="fas fa-list"></i><span>Purchase Bills</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'purchase_add.php' ? ' active' : ''; ?>">
+                    <a href="purchase_add.php"><i class="fas fa-plus-circle"></i><span>New Purchase</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'payment_out.php' ? ' active' : ''; ?>">
+                    <a href="payment_out.php"><i class="fas fa-money-bill-wave"></i><span>Payment Out</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'purchase_return.php' ? ' active' : ''; ?>">
+                    <a href="purchase_return.php"><i class="fas fa-undo-alt"></i><span>Purchase Returns</span></a>
+                </div>
+            </div>
+        </div>
 
+        <div class="nav-section">Sale</div>
+        <div class="nav-item has-sub<?php echo in_array($current_page, ['sales.php','sale_add.php','payment_in.php','sale_return.php']) ? ' open' : ''; ?>">
+            <button class="nav-toggle" onclick="toggleSub(this)">
+                <i class="fas fa-file-invoice-dollar"></i><span>Sales</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
+            </button>
+            <div class="submenu">
+                <div class="nav-item<?php echo $current_page === 'sales.php' ? ' active' : ''; ?>">
+                    <a href="sales.php"><i class="fas fa-list"></i><span>Sale Invoices</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'sale_add.php' ? ' active' : ''; ?>">
+                    <a href="sale_add.php"><i class="fas fa-plus-circle"></i><span>New Sale</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'payment_in.php' ? ' active' : ''; ?>">
+                    <a href="payment_in.php"><i class="fas fa-hand-holding-usd"></i><span>Payment In</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'sale_return.php' ? ' active' : ''; ?>">
+                    <a href="sale_return.php"><i class="fas fa-undo"></i><span>Sale Returns</span></a>
+                </div>
+            </div>
+        </div>
+
+        
+        
+
+        
         <div class="nav-section">Finance</div>
         <div class="nav-item has-sub<?php echo in_array($current_page, ['expenses.php','cash_bank.php']) ? ' open' : ''; ?>">
             <button class="nav-toggle" onclick="toggleSub(this)">

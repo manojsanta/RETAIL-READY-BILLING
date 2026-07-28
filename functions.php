@@ -65,7 +65,28 @@ function getFlash() {
 function displayFlash() {
     $flash = getFlash();
     if ($flash) {
-        echo '<div class="alert alert-' . $flash['type'] . ' alert-dismissible fade show">' . $flash['message'] . '<button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>';
+        $type = $flash['type'];
+        $msg = $flash['message'];
+        $icons = ['success' => 'check-circle', 'danger' => 'exclamation-circle', 'warning' => 'exclamation-triangle', 'info' => 'info-circle'];
+        $icon = $icons[$type] ?? 'info-circle';
+        $title = ucfirst($type);
+        echo '<div class="modal fade" id="flashModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+                <div class="modal-content" style="border-radius:14px;overflow:hidden;border-left:4px solid ' . ($type === 'success' ? '#28a745' : ($type === 'danger' ? '#dc3545' : ($type === 'warning' ? '#ffc107' : '#17a2b8'))) . ';">
+                    <div class="modal-body text-center py-4 px-4">
+                        <div style="width:56px;height:56px;border-radius:50%;background:' . ($type === 'success' ? '#f0fff4' : ($type === 'danger' ? '#fff0f0' : ($type === 'warning' ? '#fffbe6' : '#f0f9ff'))) . ';display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;">
+                            <i class="fas fa-' . $icon . '" style="font-size:26px;color:' . ($type === 'success' ? '#28a745' : ($type === 'danger' ? '#dc3545' : ($type === 'warning' ? '#e6a800' : '#17a2b8'))) . ';"></i>
+                        </div>
+                        <h5 class="fw-semibold mb-2">' . $title . '</h5>
+                        <p class="text-muted mb-0" style="font-size:14px;">' . $msg . '</p>
+                    </div>
+                    <div class="modal-footer border-0 justify-content-center pb-4 pt-0 gap-2">
+                        <button type="button" class="btn px-4" style="border-radius:8px;font-size:14px;background:' . ($type === 'success' ? '#28a745' : ($type === 'danger' ? '#dc3545' : ($type === 'warning' ? '#e6a800' : '#17a2b8'))) . ';color:#fff;" data-bs-dismiss="modal">OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>document.addEventListener("DOMContentLoaded",function(){var m=new bootstrap.Modal(document.getElementById("flashModal"));m.show();});</script>';
     }
 }
 

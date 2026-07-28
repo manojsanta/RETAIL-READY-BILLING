@@ -116,6 +116,10 @@ $perPage = 20;
 $where = [];
 $params = [];
 
+$fy = currentFY();
+if (!empty($fy['start'])) { $where[] = "po.date >= ?"; $params[] = $fy['start']; }
+if (!empty($fy['end'])) { $where[] = "po.date <= ?"; $params[] = $fy['end']; }
+
 if ($search !== '') {
     $where[] = "(po.payment_no LIKE ? OR pt.name LIKE ? OR po.reference_no LIKE ?)";
     $params[] = "%$search%";

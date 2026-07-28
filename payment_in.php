@@ -132,6 +132,10 @@ $perPage = 20;
 $where = [];
 $params = [];
 
+$fy = currentFY();
+if (!empty($fy['start'])) { $where[] = "pi.date >= ?"; $params[] = $fy['start']; }
+if (!empty($fy['end'])) { $where[] = "pi.date <= ?"; $params[] = $fy['end']; }
+
 if ($paymentFilter !== '' && in_array($paymentFilter, ['cash', 'bank', 'upi', 'cheque'])) {
     $where[] = "pi.payment_method = ?";
     $params[] = $paymentFilter;
@@ -144,7 +148,7 @@ if ($search !== '') {
 }
 
 $whereSql = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
-$totalPayments = count("SELECT COUNT(*) FROM payments_in pi LEFT JOIN parties p ON pi.party_id = p.id $whereSql", $params);
+$totalPayments = dbCount("SELECT COUNT(*) FROM payments_in pi LEFT JOIN parties p ON pi.party_id = p.id $whereSql", $params);
 $pagination = paginate($totalPayments, $perPage, $page);
 
 $payments = fetchAll(

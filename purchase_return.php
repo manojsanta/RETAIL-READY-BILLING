@@ -176,6 +176,10 @@ $perPage = 20;
 $where = [];
 $params = [];
 
+$fy = currentFY();
+if (!empty($fy['start'])) { $where[] = "pr.date >= ?"; $params[] = $fy['start']; }
+if (!empty($fy['end'])) { $where[] = "pr.date <= ?"; $params[] = $fy['end']; }
+
 if ($search !== '') {
     $where[] = "(pr.return_no LIKE ? OR p.bill_no LIKE ? OR pt.name LIKE ?)";
     $params[] = "%$search%";

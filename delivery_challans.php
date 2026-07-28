@@ -86,6 +86,9 @@ $perPage = 20;
 
 $where = [];
 $params = [];
+$fy = currentFY();
+if (!empty($fy['start'])) { $where[] = "dc.date >= ?"; $params[] = $fy['start']; }
+if (!empty($fy['end'])) { $where[] = "dc.date <= ?"; $params[] = $fy['end']; }
 if ($search !== '') {
     $where[] = "(dc.challan_no LIKE ? OR p.name LIKE ? OR dc.vehicle_no LIKE ? OR dc.destination LIKE ?)";
     $params[] = "%$search%";
@@ -99,7 +102,7 @@ if ($statusFilter !== '' && in_array($statusFilter, ['pending', 'delivered', 'ca
 }
 $whereSql = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
 
-$totalChallans = count("SELECT COUNT(*) FROM delivery_challans dc LEFT JOIN parties p ON dc.party_id = p.id $whereSql", $params);
+$totalChallans = dbCount("SELECT COUNT(*) FROM delivery_challans dc LEFT JOIN parties p ON dc.party_id = p.id $whereSql", $params);
 $pagination = paginate($totalChallans, $perPage, $page);
 
 $challans = fetchAll(

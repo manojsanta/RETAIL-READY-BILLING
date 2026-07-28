@@ -10,18 +10,17 @@ include 'header.php';
 $fy = currentFY();
 $fyStart = $fy['start'];
 $fyEnd = $fy['end'];
-$monthStart = date('Y-m-01');
 $today = today();
 
-$monthSales = (float) query("SELECT COALESCE(SUM(total), 0) FROM sales WHERE date >= ? AND date <= ? AND status != 'cancelled'", [$monthStart, $today])->fetchColumn();
+$fySales = (float) query("SELECT COALESCE(SUM(total), 0) FROM sales WHERE date >= ? AND date <= ? AND status != 'cancelled'", [$fyStart, $fyEnd])->fetchColumn();
 
-$monthPurchases = (float) query("SELECT COALESCE(SUM(total), 0) FROM purchases WHERE date >= ? AND date <= ? AND status != 'cancelled'", [$monthStart, $today])->fetchColumn();
+$fyPurchases = (float) query("SELECT COALESCE(SUM(total), 0) FROM purchases WHERE date >= ? AND date <= ? AND status != 'cancelled'", [$fyStart, $fyEnd])->fetchColumn();
 
 $outstandingDues = (float) query("SELECT COALESCE(SUM(due_amount), 0) FROM sales WHERE payment_status != 'paid' AND status != 'cancelled' AND date >= ? AND date <= ?", [$fyStart, $fyEnd])->fetchColumn();
 
 $totalStock = (int) query("SELECT COALESCE(SUM(current_stock), 0) FROM items WHERE status = 1")->fetchColumn();
 
-$monthExpenses = (float) query("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= ? AND date <= ?", [$monthStart, $today])->fetchColumn();
+$fyExpenses = (float) query("SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date >= ? AND date <= ?", [$fyStart, $fyEnd])->fetchColumn();
 
 $totalParties = (int) query("SELECT COUNT(*) FROM parties WHERE status = 1")->fetchColumn();
 
@@ -79,7 +78,7 @@ $expenseCatRows = fetchAll(
      LEFT JOIN expense_categories ec ON e.category_id = ec.id
      WHERE e.date >= ? AND e.date <= ?
      GROUP BY ec.id, ec.name ORDER BY total DESC",
-    [$monthStart, $today]
+    [$fyStart, $fyEnd]
 );
 
 $recentSales = fetchAll(
@@ -87,8 +86,9 @@ $recentSales = fetchAll(
             COALESCE(p.name, 'Walk-in') AS party_name
      FROM sales s
      LEFT JOIN parties p ON s.party_id = p.id
-     WHERE s.status != 'cancelled'
-     ORDER BY s.id DESC LIMIT 5"
+     WHERE s.status != 'cancelled' AND s.date >= ? AND s.date <= ?
+     ORDER BY s.id DESC LIMIT 5",
+    [$fyStart, $fyEnd]
 );
 
 $lowStockItems = fetchAll(
@@ -99,20 +99,21 @@ $lowStockItems = fetchAll(
 
 $recentTransactions = fetchAll(
     "(SELECT 'sale' AS t_type, s.date, COALESCE(p.name, 'Walk-in') AS party_name, s.total AS amount, s.payment_method, s.invoice_no AS ref_no
-      FROM sales s LEFT JOIN parties p ON s.party_id = p.id WHERE s.status != 'cancelled')
+      FROM sales s LEFT JOIN parties p ON s.party_id = p.id WHERE s.status != 'cancelled' AND s.date >= ? AND s.date <= ?)
      UNION ALL
      (SELECT 'purchase' AS t_type, p2.date, COALESCE(p3.name, 'Unknown') AS party_name, p2.total AS amount, p2.payment_method, p2.bill_no AS ref_no
-      FROM purchases p2 LEFT JOIN parties p3 ON p2.party_id = p3.id WHERE p2.status != 'cancelled')
+      FROM purchases p2 LEFT JOIN parties p3 ON p2.party_id = p3.id WHERE p2.status != 'cancelled' AND p2.date >= ? AND p2.date <= ?)
      UNION ALL
      (SELECT 'payment_in' AS t_type, pi.date, COALESCE(p4.name, 'Unknown') AS party_name, pi.amount, pi.payment_method, pi.receipt_no AS ref_no
-      FROM payments_in pi LEFT JOIN parties p4 ON pi.party_id = p4.id)
+      FROM payments_in pi LEFT JOIN parties p4 ON pi.party_id = p4.id WHERE pi.date >= ? AND pi.date <= ?)
      UNION ALL
      (SELECT 'payment_out' AS t_type, po.date, COALESCE(p5.name, 'Unknown') AS party_name, po.amount, po.payment_method, po.payment_no AS ref_no
-      FROM payments_out po LEFT JOIN parties p5 ON po.party_id = p5.id)
+      FROM payments_out po LEFT JOIN parties p5 ON po.party_id = p5.id WHERE po.date >= ? AND po.date <= ?)
      UNION ALL
      (SELECT 'expense' AS t_type, e.date, COALESCE(ec2.name, 'Expense') AS party_name, e.amount, e.payment_method, e.expense_no AS ref_no
-      FROM expenses e LEFT JOIN expense_categories ec2 ON e.category_id = ec2.id)
-     ORDER BY date DESC LIMIT 10"
+      FROM expenses e LEFT JOIN expense_categories ec2 ON e.category_id = ec2.id WHERE e.date >= ? AND e.date <= ?)
+     ORDER BY date DESC LIMIT 10",
+    [$fyStart, $fyEnd, $fyStart, $fyEnd, $fyStart, $fyEnd, $fyStart, $fyEnd, $fyStart, $fyEnd]
 );
 ?>
 
@@ -173,8 +174,8 @@ $recentTransactions = fetchAll(
         <div class="stat-card stat-card-blue">
             <div class="stat-icon stat-icon-blue"><i class="fas fa-file-invoice-dollar"></i></div>
             <div>
-                <div class="stat-value"><?= money($monthSales) ?></div>
-                <div class="stat-label">Total Sales (This Month)</div>
+                <div class="stat-value"><?= money($fySales) ?></div>
+                <div class="stat-label">Total Sales (This FY)</div>
             </div>
         </div>
     </div>
@@ -182,8 +183,8 @@ $recentTransactions = fetchAll(
         <div class="stat-card stat-card-green">
             <div class="stat-icon stat-icon-green"><i class="fas fa-shopping-cart"></i></div>
             <div>
-                <div class="stat-value"><?= money($monthPurchases) ?></div>
-                <div class="stat-label">Total Purchases (This Month)</div>
+                <div class="stat-value"><?= money($fyPurchases) ?></div>
+                <div class="stat-label">Total Purchases (This FY)</div>
             </div>
         </div>
     </div>
@@ -222,8 +223,8 @@ $recentTransactions = fetchAll(
         <div class="stat-card stat-card-pink">
             <div class="stat-icon stat-icon-pink"><i class="fas fa-receipt"></i></div>
             <div>
-                <div class="stat-value"><?= money($monthExpenses) ?></div>
-                <div class="stat-label">Total Expenses (This Month)</div>
+                <div class="stat-value"><?= money($fyExpenses) ?></div>
+                <div class="stat-label">Total Expenses (This FY)</div>
             </div>
         </div>
     </div>
@@ -274,7 +275,7 @@ $recentTransactions = fetchAll(
                 <?php else: ?>
                     <div class="empty-state py-4">
                         <i class="fas fa-receipt d-block"></i>
-                        <p>No expenses recorded this month</p>
+                        <p>No expenses recorded this FY</p>
                     </div>
                 <?php endif; ?>
             </div>

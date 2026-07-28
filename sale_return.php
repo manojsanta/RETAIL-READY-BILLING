@@ -182,16 +182,24 @@ if (isset($_GET['ajax_sale_items']) && $_GET['ajax_sale_items'] === '1') {
 $page = max(1, intval($_GET['page'] ?? 1));
 $perPage = 20;
 
-$totalReturns = count("SELECT COUNT(*) FROM sale_returns");
+$fy = currentFY();
+$fyWhere = [];
+$fyParams = [];
+if (!empty($fy['start'])) { $fyWhere[] = "sr.date >= ?"; $fyParams[] = $fy['start']; }
+if (!empty($fy['end'])) { $fyWhere[] = "sr.date <= ?"; $fyParams[] = $fy['end']; }
+$fyWhereCount = str_replace('sr.', '', implode(' AND ', $fyWhere));
+$totalReturns = dbCount("SELECT COUNT(*) FROM sale_returns" . ($fyWhere ? ' WHERE ' . $fyWhereCount : ''), $fyParams);
 $pagination = paginate($totalReturns, $perPage, $page);
 
 $returns = fetchAll(
     "SELECT sr.*, p.name as party_name, s.invoice_no as sale_invoice
      FROM sale_returns sr
      LEFT JOIN parties p ON sr.party_id = p.id
-     LEFT JOIN sales s ON sr.sale_id = s.id
-     ORDER BY sr.id DESC
-     LIMIT {$pagination['per_page']} OFFSET {$pagination['offset']}"
+     LEFT JOIN sales s ON sr.sale_id = s.id"
+     . ($fyWhere ? ' WHERE ' . implode(' AND ', $fyWhere) : '') .
+     " ORDER BY sr.id DESC
+     LIMIT {$pagination['per_page']} OFFSET {$pagination['offset']}",
+     $fyParams
 );
 
 $customers = fetchAll("SELECT id, name, phone FROM parties WHERE status = 1 AND (type = 'customer' OR type = 'both') ORDER BY name ASC");

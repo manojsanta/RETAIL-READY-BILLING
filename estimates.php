@@ -168,6 +168,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $customers = fetchAll("SELECT id, name, phone FROM parties WHERE status = 1 AND (type = 'customer' OR type = 'both') ORDER BY name ASC");
+if ($editEstimate && $editEstimate['party_id']) {
+    $editingParty = fetch("SELECT id, name, phone FROM parties WHERE id = ?", [$editEstimate['party_id']]);
+    if ($editingParty && !in_array($editingParty['id'], array_column($customers, 'id'))) {
+        array_unshift($customers, $editingParty);
+    }
+}
 
 // List view
 $search = trim($_GET['search'] ?? '');
@@ -177,6 +183,9 @@ $perPage = 20;
 
 $where = [];
 $params = [];
+$fy = currentFY();
+if (!empty($fy['start'])) { $where[] = "e.date >= ?"; $params[] = $fy['start']; }
+if (!empty($fy['end'])) { $where[] = "e.date <= ?"; $params[] = $fy['end']; }
 if ($search !== '') {
     $where[] = "(e.estimate_no LIKE ? OR p.name LIKE ?)";
     $params[] = "%$search%";
@@ -188,7 +197,7 @@ if ($statusFilter !== '' && in_array($statusFilter, ['draft', 'sent', 'accepted'
 }
 $whereSql = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
 
-$totalEstimates = count("SELECT COUNT(*) FROM estimates e LEFT JOIN parties p ON e.party_id = p.id $whereSql", $params);
+$totalEstimates = dbCount("SELECT COUNT(*) FROM estimates e LEFT JOIN parties p ON e.party_id = p.id $whereSql", $params);
 $pagination = paginate($totalEstimates, $perPage, $page);
 
 $estimates = fetchAll(
@@ -202,17 +211,44 @@ include 'header.php';
 
 <?php if ($mode === 'form'): ?>
 <style>
-    .item-search-wrapper { position: relative; }
+    .compact-form .card { margin-bottom: 8px; }
+    .compact-form .card-header { padding: 6px 12px; }
+    .compact-form .card-header h5, .compact-form .card-header h6 { font-size: 14px; }
+    .compact-form .card-body { padding: 8px 12px; }
+    .compact-form .form-label { margin-bottom: 2px; font-size: 12px; }
+    .compact-form .form-control, .compact-form .form-select { font-size: 12px; padding: 2px 6px; height: auto; }
+    .compact-form .table input[type=number] { max-width: 100%; }
+    .compact-form .table td, .compact-form .table th { padding: 4px 6px; font-size: 12px; }
+    .compact-form .btn-sm { font-size: 11px; padding: 2px 8px; }
+    .compact-form .row.g-3 { margin: -4px; }
+    .compact-form .row.g-3 > [class*=col-] { padding: 4px; }
+    .compact-form .totals-box .total-row { padding: 3px 0; font-size: 12px; }
+    .compact-form .totals-box .total-row.grand { padding-top: 6px; margin-top: 4px; font-size: 16px; }
     .item-search-dropdown {
-        position: absolute; top: 100%; left: 0; right: 0; z-index: 1080;
-        background: #fff; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px;
-        box-shadow: 0 6px 20px rgba(0,0,0,0.12); max-height: 220px; overflow-y: auto; display: none;
+        position: fixed; z-index: 9999;
+        background: #fff; border: 1px solid #dee2e6; border-radius: 8px;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.12); max-height: 300px; overflow-y: auto; display: none; padding: 0;
     }
     .item-search-dropdown.show { display: block; }
-    .item-search-dropdown .srch-item {
-        padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f5f5f5;
+    .item-search-dropdown .srch-header {
+        display: grid; grid-template-columns: 1fr 130px 70px 100px;
+        padding: 7px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase;
+        color: #6b7280; background: #f9fafb; border-bottom: 1px solid #e5e7eb; letter-spacing: 0.3px;
+        position: sticky; top: 0; z-index: 1;
     }
-    .item-search-dropdown .srch-item:hover { background: #f0f4ff; }
+    .item-search-dropdown .srch-header span { text-align: right; }
+    .item-search-dropdown .srch-header span:first-child { text-align: left; }
+    .item-search-dropdown .srch-header span:nth-child(2) { text-align: left; }
+    .item-search-dropdown .srch-row {
+        display: grid; grid-template-columns: 1fr 130px 70px 100px;
+        padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f5f5f5; align-items: center;
+    }
+    .item-search-dropdown .srch-row:hover { background: #eef3ff; }
+    .item-search-dropdown .srch-row .srch-name { font-weight: 600; color: #111; }
+    .item-search-dropdown .srch-row .srch-sku { font-size: 12px; color: #6b7280; font-family: monospace; }
+    .item-search-dropdown .srch-row .srch-stock { text-align: right; color: #6b7280; font-size: 12px; }
+    .item-search-dropdown .srch-row .srch-rate { text-align: right; font-weight: 700; color: #2962FF; }
+    .item-search-dropdown .srch-empty { padding: 20px 12px; text-align: center; color: #9ca3af; font-size: 13px; }
     .party-search-wrapper { position: relative; }
     .party-search-dropdown {
         position: absolute; top: 100%; left: 0; right: 0; z-index: 1080;
@@ -228,10 +264,10 @@ include 'header.php';
     .totals-box .total-row.grand { border-top: 2px solid #dee2e6; padding-top: 10px; margin-top: 6px; font-size: 20px; font-weight: 700; color: #2962FF; }
 </style>
 
-<div class="row justify-content-center">
-    <div class="col-lg-10">
+<div class="row justify-content-center compact-form">
+    <div class="col-12">
         <div class="card mb-3">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-file-contract me-1"></i> <?= $editEstimate ? 'Edit Estimate' : 'New Estimate' ?></h5>
             </div>
             <div class="card-body">
@@ -269,6 +305,7 @@ include 'header.php';
                                 <input type="hidden" name="party_id" id="party_id" value="<?= $editEstimate['party_id'] ?? 0 ?>">
                                 <div class="party-search-dropdown" id="partyDropdown"></div>
                             </div>
+                            <small class="text-muted"><a href="#" onclick="openPartyModal();return false;">+ Add New Party</a></small>
                         </div>
                     </div>
 
@@ -278,16 +315,17 @@ include 'header.php';
                             <div class="table-responsive">
                                 <table class="table table-sm mb-0" id="itemsTable">
                                     <thead class="table-light">
-                                        <tr>
-                                            <th style="width:40px">#</th>
-                                            <th style="width:28%">Item</th>
-                                            <th style="width:8%">Qty</th>
-                                            <th style="width:12%">Rate</th>
-                                            <th style="width:10%">Disc %</th>
-                                            <th style="width:10%">Tax %</th>
-                                            <th style="width:12%" class="text-end">Total</th>
-                                            <th style="width:40px"></th>
-                                        </tr>
+                                                <tr>
+                                                    <th style="width:30px">#</th>
+                                                    <th style="width:16%">Item</th>
+                                                    <th style="width:11%">Qty</th>
+                                                    <th style="width:14%">Rate</th>
+                                                    <th style="width:9%">Disc %</th>
+                                                    <th style="width:9%">Tax %</th>
+                                                    <th style="width:12%" class="text-end">Tax Amt</th>
+                                                    <th style="width:12%" class="text-end">Total</th>
+                                                    <th style="width:30px"></th>
+                                                </tr>
                                     </thead>
                                     <tbody id="itemsContainer">
                                         <?php if (!empty($editItems)): ?>
@@ -305,6 +343,7 @@ include 'header.php';
                                                     <td><input type="number" name="item_rate[]" class="form-control form-control-sm item-rate" step="0.01" min="0" value="<?= $ei['rate'] ?>"></td>
                                                     <td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" max="100" value="<?= $ei['tax_rate'] > 0 ? round(($ei['discount'] / ($ei['qty'] * $ei['rate'])) * 100, 2) : 0 ?>"></td>
                                                     <td><input type="number" name="item_tax[]" class="form-control form-control-sm item-tax" step="0.01" min="0" max="100" value="<?= $ei['tax_rate'] ?>"></td>
+                                                    <td class="text-end item-line-tax">0.00</td>
                                                     <td class="text-end fw-bold item-line-total">0.00</td>
                                                     <td><button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="fas fa-times"></i></button></td>
                                                 </tr>
@@ -323,6 +362,7 @@ include 'header.php';
                                                 <td><input type="number" name="item_rate[]" class="form-control form-control-sm item-rate" step="0.01" min="0" value="0"></td>
                                                 <td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" max="100" value="0"></td>
                                                 <td><input type="number" name="item_tax[]" class="form-control form-control-sm item-tax" step="0.01" min="0" max="100" value="0"></td>
+                                                <td class="text-end item-line-tax">0.00</td>
                                                 <td class="text-end fw-bold item-line-total">0.00</td>
                                                 <td><button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="fas fa-times"></i></button></td>
                                             </tr>
@@ -377,7 +417,99 @@ include 'header.php';
     </div>
 </div>
 
+<div class="modal fade" id="quickPartyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:520px;">
+        <div class="modal-content" style="border-radius:14px;overflow:hidden;">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-semibold"><i class="fas fa-user-plus me-2 text-primary"></i>Add New Party</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2">
+                    <div class="col-4">
+                        <label class="form-label">Type</label>
+                        <select id="qp_type" class="form-select form-select-sm">
+                            <option value="customer">Customer</option>
+                            <option value="supplier">Supplier</option>
+                            <option value="both">Both</option>
+                        </select>
+                    </div>
+                    <div class="col-8">
+                        <label class="form-label">Name <span class="text-danger">*</span></label>
+                        <input type="text" id="qp_name" class="form-control form-control-sm" placeholder="Party name">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Phone</label>
+                        <input type="text" id="qp_phone" class="form-control form-control-sm" placeholder="Phone number">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">GSTIN</label>
+                        <input type="text" id="qp_gstin" class="form-control form-control-sm" placeholder="GSTIN">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Address</label>
+                        <textarea id="qp_address" class="form-control form-control-sm" rows="2" placeholder="Full address"></textarea>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">City</label>
+                        <input type="text" id="qp_city" class="form-control form-control-sm" placeholder="City">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Pincode</label>
+                        <input type="text" id="qp_pincode" class="form-control form-control-sm" placeholder="Pincode">
+                    </div>
+                </div>
+                <div id="qp_error" class="text-danger small mt-2" style="display:none;"></div>
+            </div>
+            <div class="modal-footer border-0 pt-0 justify-content-center gap-2">
+                <button type="button" class="btn btn-light px-3" style="border-radius:8px;font-size:14px;" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary px-3" style="border-radius:8px;font-size:14px;" onclick="saveQuickParty()"><i class="fas fa-save me-1"></i>Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+function openPartyModal() {
+    document.getElementById('qp_name').value = '';
+    document.getElementById('qp_phone').value = '';
+    document.getElementById('qp_type').value = 'customer';
+    document.getElementById('qp_error').style.display = 'none';
+    new bootstrap.Modal(document.getElementById('quickPartyModal')).show();
+}
+
+function saveQuickParty() {
+    var name = document.getElementById('qp_name').value.trim();
+    var phone = document.getElementById('qp_phone').value.trim();
+    var type = document.getElementById('qp_type').value;
+    var gstin = document.getElementById('qp_gstin').value.trim();
+    var address = document.getElementById('qp_address').value.trim();
+    var city = document.getElementById('qp_city').value.trim();
+    var pincode = document.getElementById('qp_pincode').value.trim();
+    var err = document.getElementById('qp_error');
+    if (!name) { err.textContent = 'Party name is required.'; err.style.display = 'block'; return; }
+    err.style.display = 'none';
+    var btn = document.querySelector('#quickPartyModal .btn-primary');
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Saving...';
+    fetch('api/party_quick_add.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'name=' + encodeURIComponent(name) + '&phone=' + encodeURIComponent(phone) + '&type=' + encodeURIComponent(type) + '&gstin=' + encodeURIComponent(gstin) + '&address=' + encodeURIComponent(address) + '&city=' + encodeURIComponent(city) + '&pincode=' + encodeURIComponent(pincode) + '&csrf_token=' + encodeURIComponent('<?= csrfToken() ?>')
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+        if (data.success) {
+            document.getElementById('party_search').value = data.name;
+            document.getElementById('party_id').value = data.id;
+            bootstrap.Modal.getInstance(document.getElementById('quickPartyModal')).hide();
+        } else {
+            err.textContent = data.error || 'Failed to add party.'; err.style.display = 'block';
+        }
+    }).catch(function() {
+        btn.disabled = false; btn.innerHTML = '<i class="fas fa-save me-1"></i>Save';
+        err.textContent = 'Network error.'; err.style.display = 'block';
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     var rowIndex = <?= count($editItems) ?: 1 ?>;
 
@@ -385,6 +517,15 @@ document.addEventListener('DOMContentLoaded', function() {
     var partyIdField = document.getElementById('party_id');
     var partyDropdown = document.getElementById('partyDropdown');
     var partyTimer;
+
+    if (partySearch.value.trim() !== '' && partyIdField.value == 0) {
+        var q = partySearch.value.trim();
+        fetch('api/parties_search.php?q=' + encodeURIComponent(q))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.length > 0) { partyIdField.value = data[0].id; }
+            });
+    }
 
     partySearch.addEventListener('input', function() {
         clearTimeout(partyTimer);
@@ -410,6 +551,56 @@ document.addEventListener('DOMContentLoaded', function() {
     partySearch.addEventListener('focus', function() { if (this.value.trim().length >= 2) partyDropdown.classList.add('show'); });
     document.addEventListener('click', function(e) { if (!partySearch.parentElement.contains(e.target)) partyDropdown.classList.remove('show'); });
 
+    function renderItems(items, input, dropdown) {
+        dropdown.innerHTML = '';
+        if (items.length === 0) { dropdown.innerHTML = '<div class="srch-empty">No items found</div>'; return; }
+        var hdr = document.createElement('div');
+        hdr.className = 'srch-header';
+        hdr.innerHTML = '<span>Item</span><span>SKU / HSN</span><span>Stock</span><span>Rate</span>';
+        dropdown.appendChild(hdr);
+        items.forEach(function(item) {
+            var d = document.createElement('div');
+            d.className = 'srch-row';
+            d.innerHTML = '<div class="srch-name">' + esc(item.name) + '</div>' +
+                '<div class="srch-sku">' + esc(item.sku || item.hsn_code || '-') + '</div>' +
+                '<div class="srch-stock">' + item.current_stock + '</div>' +
+                '<div class="srch-rate">₹' + parseFloat(item.sale_price).toFixed(2) + '</div>';
+            d.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                input.value = item.name;
+                input.closest('.item-row').querySelector('.item-id').value = item.id;
+                input.closest('.item-row').querySelector('.item-rate').value = parseFloat(item.sale_price).toFixed(2);
+                input.closest('.item-row').querySelector('.item-tax').value = item.tax_rate || 0;
+                dropdown.classList.remove('show');
+                calcRow(input.closest('.item-row')); calcGrand();
+                input.focus();
+            });
+            dropdown.appendChild(d);
+        });
+    }
+
+    function posDropdown(input, dropdown) {
+        var rect = input.getBoundingClientRect();
+        dropdown.style.top = rect.bottom + 'px';
+        dropdown.style.left = rect.left + 'px';
+        dropdown.style.width = Math.max(rect.width, 500) + 'px';
+    }
+
+    function showDropdown(input, dropdown) {
+        posDropdown(input, dropdown);
+        dropdown.classList.add('show');
+    }
+
+    function hideDropdown(dropdown) {
+        dropdown.classList.remove('show');
+    }
+
+    function fetchItems(input, dropdown, q) {
+        fetch('api/items_search.php?q=' + encodeURIComponent(q))
+            .then(function(r) { return r.json(); })
+            .then(function(items) { renderItems(items, input, dropdown); });
+    }
+
     function initItemSearch(row) {
         var searchInput = row.querySelector('.item-search');
         var dropdown = row.querySelector('.item-search-dropdown');
@@ -417,33 +608,23 @@ document.addEventListener('DOMContentLoaded', function() {
         searchInput.addEventListener('input', function() {
             clearTimeout(timer);
             var q = this.value.trim();
-            if (q.length < 2) { dropdown.classList.remove('show'); return; }
-            timer = setTimeout(function() {
-                fetch('api/items_search.php?q=' + encodeURIComponent(q))
-                    .then(function(r) { return r.json(); })
-                    .then(function(items) {
-                        dropdown.innerHTML = '';
-                        if (items.length === 0) { dropdown.innerHTML = '<div class="srch-item text-muted">No items found</div>'; dropdown.classList.add('show'); return; }
-                        items.forEach(function(item) {
-                            var d = document.createElement('div');
-                            d.className = 'srch-item';
-                            d.innerHTML = '<div><strong>' + esc(item.name) + '</strong><br><small class="text-muted">Stock: ' + item.current_stock + '</small></div><div class="fw-bold">₹' + parseFloat(item.sale_price).toFixed(2) + '</div>';
-                            d.addEventListener('click', function() {
-                                searchInput.value = item.name;
-                                row.querySelector('.item-id').value = item.id;
-                                row.querySelector('.item-rate').value = parseFloat(item.sale_price).toFixed(2);
-                                row.querySelector('.item-tax').value = item.tax_rate || 0;
-                                dropdown.classList.remove('show');
-                                calcRow(row); calcGrand();
-                            });
-                            dropdown.appendChild(d);
-                        });
-                        dropdown.classList.add('show');
-                    });
-            }, 300);
+            timer = setTimeout(function() { fetchItems(searchInput, dropdown, q); }, 200);
         });
-        searchInput.addEventListener('focus', function() { if (this.value.trim().length >= 2) dropdown.classList.add('show'); });
-        document.addEventListener('click', function(e) { if (!searchInput.parentElement.contains(e.target)) dropdown.classList.remove('show'); });
+        searchInput.addEventListener('focus', function() {
+            clearTimeout(timer);
+            var q = this.value.trim();
+            fetchItems(searchInput, dropdown, q);
+            showDropdown(searchInput, dropdown);
+        });
+        searchInput.addEventListener('blur', function() {
+            setTimeout(function() { hideDropdown(dropdown); }, 150);
+        });
+        document.addEventListener('scroll', function() {
+            if (dropdown.classList.contains('show')) posDropdown(searchInput, dropdown);
+        }, true);
+        window.addEventListener('resize', function() {
+            if (dropdown.classList.contains('show')) posDropdown(searchInput, dropdown);
+        });
     }
 
     function calcRow(row) {
@@ -455,6 +636,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var disc = (sub * discPct) / 100;
         var tax = ((sub - disc) * taxPct) / 100;
         var total = sub - disc + tax;
+        row.querySelector('.item-line-tax').textContent = '₹' + tax.toFixed(2);
         row.querySelector('.item-line-total').textContent = '₹' + total.toFixed(2);
     }
 
@@ -499,12 +681,12 @@ document.addEventListener('DOMContentLoaded', function() {
             '<td><input type="number" name="item_rate[]" class="form-control form-control-sm item-rate" step="0.01" min="0" value="0"></td>' +
             '<td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" max="100" value="0"></td>' +
             '<td><input type="number" name="item_tax[]" class="form-control form-control-sm item-tax" step="0.01" min="0" max="100" value="0"></td>' +
+            '<td class="text-end item-line-tax">0.00</td>' +
             '<td class="text-end fw-bold item-line-total">0.00</td>' +
             '<td><button type="button" class="btn btn-sm btn-outline-danger remove-row"><i class="fas fa-times"></i></button></td>';
         container.appendChild(tr);
         initItemSearch(tr);
         rowIndex++;
-        tr.querySelector('.item-search').focus();
     });
 
     document.addEventListener('click', function(e) {

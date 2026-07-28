@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 
     $deleteId = intval($_POST['sale_id'] ?? 0);
     if ($deleteId > 0) {
-        $hasPayments = count("SELECT COUNT(*) FROM payments_in WHERE sale_id = ?", [$deleteId]);
+        $hasPayments = dbCount("SELECT COUNT(*) FROM payments_in WHERE sale_id = ?", [$deleteId]);
         if ($hasPayments > 0) {
             setFlash('danger', 'Cannot delete invoice: payment entries exist.');
         } else {
@@ -49,6 +49,10 @@ $perPage = 20;
 $where = [];
 $params = [];
 
+$fy = currentFY();
+if (!empty($fy['start'])) { $where[] = "s.date >= ?"; $params[] = $fy['start']; }
+if (!empty($fy['end'])) { $where[] = "s.date <= ?"; $params[] = $fy['end']; }
+
 if ($dateFrom !== '') {
     $where[] = "s.date >= ?";
     $params[] = dateDB($dateFrom);
@@ -70,7 +74,7 @@ if ($search !== '') {
 
 $whereSql = count($where) > 0 ? 'WHERE ' . implode(' AND ', $where) : '';
 
-$total = count("SELECT COUNT(*) FROM sales s LEFT JOIN parties p ON s.party_id = p.id $whereSql", $params);
+$total = dbCount("SELECT COUNT(*) FROM sales s LEFT JOIN parties p ON s.party_id = p.id $whereSql", $params);
 $pagination = paginate($total, $perPage, $page);
 
 // Summary cards
@@ -82,7 +86,7 @@ $summary = fetch("SELECT
     COALESCE(SUM(s.due_amount), 0) as total_outstanding
     FROM sales s LEFT JOIN parties p ON s.party_id = p.id $summaryWhere", $summaryParams);
 
-$todaySales = count("SELECT COUNT(*) FROM sales WHERE date = ?", [today()]);
+$todaySales = dbCount("SELECT COUNT(*) FROM sales WHERE date = ?" . (!empty($fy['start']) ? " AND date >= ? AND date <= ?" : ""), array_merge([today()], !empty($fy['start']) ? [$fy['start'], $fy['end']] : []));
 
 // Fetch invoices
 $invoices = fetchAll(
