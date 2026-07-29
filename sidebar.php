@@ -135,7 +135,7 @@ $companyName = $company['name'] ?? 'Retail Ready';
         </div>
 
         <div class="nav-section">Sale</div>
-        <div class="nav-item has-sub<?php echo in_array($current_page, ['sales.php','sale_add.php','payment_in.php','sale_return.php']) ? ' open' : ''; ?>">
+        <div class="nav-item has-sub<?php echo in_array($current_page, ['sales.php','sale_add.php','payment_in.php','sale_return.php','estimates.php']) ? ' open' : ''; ?>">
             <button class="nav-toggle" onclick="toggleSub(this)">
                 <i class="fas fa-file-invoice-dollar"></i><span>Sales</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
             </button>
@@ -151,6 +151,9 @@ $companyName = $company['name'] ?? 'Retail Ready';
                 </div>
                 <div class="nav-item<?php echo $current_page === 'sale_return.php' ? ' active' : ''; ?>">
                     <a href="sale_return.php"><i class="fas fa-undo"></i><span>Sale Returns</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'estimates.php' ? ' active' : ''; ?>">
+                    <a href="estimates.php"><i class="fas fa-file-contract"></i><span>Estimates</span></a>
                 </div>
             </div>
         </div>
@@ -208,16 +211,13 @@ $companyName = $company['name'] ?? 'Retail Ready';
         </div>
 
         <div class="nav-section">More</div>
-        <div class="nav-item has-sub<?php echo in_array($current_page, ['estimates.php','delivery_challans.php','settings.php','backup.php','financial_year_manage.php']) ? ' open' : ''; ?>">
+        <div class="nav-item has-sub<?php echo in_array($current_page, ['delivery_challans.php','settings.php','backup.php','financial_year_manage.php']) ? ' open' : ''; ?>">
             <button class="nav-toggle" onclick="toggleSub(this)">
                 <i class="fas fa-ellipsis-h"></i><span>More</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
             </button>
             <div class="submenu">
                 <div class="nav-item<?php echo $current_page === 'financial_year_manage.php' ? ' active' : ''; ?>">
                     <a href="financial_year_manage.php"><i class="fas fa-calendar-alt"></i><span>Financial Years</span></a>
-                </div>
-                <div class="nav-item<?php echo $current_page === 'estimates.php' ? ' active' : ''; ?>">
-                    <a href="estimates.php"><i class="fas fa-file-contract"></i><span>Estimates</span></a>
                 </div>
                 <div class="nav-item<?php echo $current_page === 'delivery_challans.php' ? ' active' : ''; ?>">
                     <a href="delivery_challans.php"><i class="fas fa-truck"></i><span>Delivery Challan</span></a>

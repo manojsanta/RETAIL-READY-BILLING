@@ -80,6 +80,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $partyId = intval($_POST['party_id'] ?? 0);
     $estDate = sanitize($_POST['date'] ?? today());
     $validUntil = sanitize($_POST['valid_until'] ?? '');
+    $purpose = sanitize($_POST['purpose'] ?? '');
+    $serviceNeeded = sanitize($_POST['service_needed'] ?? '');
     $notes = sanitize($_POST['notes'] ?? '');
     $status = sanitize($_POST['status'] ?? 'draft');
     $grandTotal = floatval($_POST['grand_total'] ?? 0);
@@ -108,9 +110,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $lineSub = $qty * $rate;
         $lineDisc = ($lineSub * $discPct) / 100;
-        $afterDisc = $lineSub - $lineDisc;
-        $lineTax = ($afterDisc * $taxPct) / 100;
-        $lineTotal = $afterDisc + $lineTax;
+        $unitAfterDisc = $rate * (1 - $discPct / 100);
+        $unitTax = round(max($unitAfterDisc, 0) * $taxPct / 100, 2);
+        $unitTotal = round(max($unitAfterDisc, 0) + $unitTax, 2);
+        $lineTax = round($qty * $unitTax, 2);
+        $lineTotal = round($qty * $unitTotal, 2);
 
         $validItems[] = [
             'item_id' => $itemId, 'qty' => $qty, 'rate' => $rate,
@@ -138,15 +142,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $editIdPost = intval($_POST['edit_id'] ?? 0);
         if ($editIdPost > 0) {
             $estimateNo = fetch("SELECT estimate_no FROM estimates WHERE id = ?", [$editIdPost])['estimate_no'];
-            query("UPDATE estimates SET party_id=?, date=?, valid_until=?, subtotal=?, tax_amount=?, discount_amount=?, total=?, notes=?, status=? WHERE id=?",
-                [$partyId ?: null, $estDate, $validUntil ?: null, $calcSub, $calcTax, $calcDisc, $calcGrand, $notes, $status, $editIdPost]);
+            query("UPDATE estimates SET party_id=?, date=?, valid_until=?, purpose=?, service_needed=?, subtotal=?, tax_amount=?, discount_amount=?, total=?, notes=?, status=? WHERE id=?",
+                [$partyId ?: null, $estDate, $validUntil ?: null, $purpose ?: null, $serviceNeeded ?: null, $calcSub, $calcTax, $calcDisc, $calcGrand, $notes, $status, $editIdPost]);
             query("DELETE FROM estimate_items WHERE estimate_id = ?", [$editIdPost]);
             $estId = $editIdPost;
         } else {
             $estimateNo = generateEstimateNo();
             $estId = insertId(
-                "INSERT INTO estimates (estimate_no, party_id, user_id, date, subtotal, tax_amount, discount_amount, total, valid_until, notes, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                [$estimateNo, $partyId ?: null, $_SESSION['user_id'], $estDate, $calcSub, $calcTax, $calcDisc, $calcGrand, $validUntil ?: null, $notes, $status]
+                "INSERT INTO estimates (estimate_no, party_id, user_id, date, purpose, service_needed, subtotal, tax_amount, discount_amount, total, valid_until, notes, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                [$estimateNo, $partyId ?: null, $_SESSION['user_id'], $estDate, $purpose ?: null, $serviceNeeded ?: null, $calcSub, $calcTax, $calcDisc, $calcGrand, $validUntil ?: null, $notes, $status]
             );
         }
 
@@ -309,6 +313,17 @@ include 'header.php';
                         </div>
                     </div>
 
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Purpose</label>
+                            <input type="text" name="purpose" class="form-control" placeholder="e.g. Annual Maintenance, New Installation, Repair" value="<?= sanitize($editEstimate['purpose'] ?? '') ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Service Needed</label>
+                            <textarea name="service_needed" class="form-control" rows="1" placeholder="Brief description of service required"><?= sanitize($editEstimate['service_needed'] ?? '') ?></textarea>
+                        </div>
+                    </div>
+
                     <div class="card mb-3">
                         <div class="card-header"><h6 class="mb-0"><i class="fas fa-boxes me-1"></i> Items</h6></div>
                         <div class="card-body p-0">
@@ -396,7 +411,7 @@ include 'header.php';
                                     <div class="mb-2">
                                         <label class="form-label fw-semibold">Status</label>
                                         <select name="status" class="form-select form-select-sm">
-                                            <option value="draft" <?= ($editEstimate['status'] ?? 'draft') === 'draft' ? 'selected' : '' ?>>Draft</option>
+                                            <option value="draft" <?= ($editEstimate['status'] ?? 'draft') === 'draft' ? 'selected' : '' ?> hidden>Draft</option>
                                             <option value="sent" <?= ($editEstimate['status'] ?? '') === 'sent' ? 'selected' : '' ?>>Sent</option>
                                             <option value="accepted" <?= ($editEstimate['status'] ?? '') === 'accepted' ? 'selected' : '' ?>>Accepted</option>
                                             <option value="rejected" <?= ($editEstimate['status'] ?? '') === 'rejected' ? 'selected' : '' ?>>Rejected</option>
@@ -632,10 +647,12 @@ document.addEventListener('DOMContentLoaded', function() {
         var rate = parseFloat(row.querySelector('.item-rate').value) || 0;
         var discPct = parseFloat(row.querySelector('.item-disc').value) || 0;
         var taxPct = parseFloat(row.querySelector('.item-tax').value) || 0;
-        var sub = qty * rate;
-        var disc = (sub * discPct) / 100;
-        var tax = ((sub - disc) * taxPct) / 100;
-        var total = sub - disc + tax;
+        var unitDisc = (rate * discPct) / 100;
+        var unitAfterDisc = rate - unitDisc;
+        var unitTax = Math.round(unitAfterDisc * taxPct / 100 * 100) / 100;
+        var unitTotal = Math.round((unitAfterDisc + unitTax) * 100) / 100;
+        var total = Math.round(qty * unitTotal * 100) / 100;
+        var tax = Math.round(qty * unitTax * 100) / 100;
         row.querySelector('.item-line-tax').textContent = '₹' + tax.toFixed(2);
         row.querySelector('.item-line-total').textContent = '₹' + total.toFixed(2);
     }
@@ -644,13 +661,15 @@ document.addEventListener('DOMContentLoaded', function() {
         var rows = document.querySelectorAll('.item-row');
         var sub = 0, disc = 0, tax = 0;
         rows.forEach(function(row) {
+            calcRow(row);
             var qty = parseFloat(row.querySelector('.item-qty').value) || 0;
             var rate = parseFloat(row.querySelector('.item-rate').value) || 0;
+            var lsub = qty * rate;
             var discPct = parseFloat(row.querySelector('.item-disc').value) || 0;
-            var taxPct = parseFloat(row.querySelector('.item-tax').value) || 0;
-            var lsub = qty * rate; var ldisc = (lsub * discPct) / 100; var ltax = ((lsub - ldisc) * taxPct) / 100;
+            var ldisc = (lsub * discPct) / 100;
+            var taxText = row.querySelector('.item-line-tax').textContent.replace('₹', '');
+            var ltax = parseFloat(taxText) || 0;
             sub += lsub; disc += ldisc; tax += ltax;
-            calcRow(row);
         });
         var grand = sub - disc + tax;
         document.getElementById('disp_subtotal').textContent = '₹' + sub.toFixed(2);
@@ -725,7 +744,7 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
                 <label class="form-label">Status</label>
                 <select name="status_filter" class="form-select form-select-sm">
                     <option value="">All</option>
-                    <option value="draft" <?= $statusFilter === 'draft' ? 'selected' : '' ?>>Draft</option>
+                                    <option value="draft" <?= $statusFilter === 'draft' ? 'selected' : '' ?> hidden>Draft</option>
                     <option value="sent" <?= $statusFilter === 'sent' ? 'selected' : '' ?>>Sent</option>
                     <option value="accepted" <?= $statusFilter === 'accepted' ? 'selected' : '' ?>>Accepted</option>
                     <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>Rejected</option>
@@ -744,26 +763,28 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
     <div class="table-responsive">
         <table class="table table-hover mb-0">
             <thead class="table-light">
-                <tr>
-                    <th>#</th>
-                    <th>Estimate No</th>
-                    <th>Party</th>
-                    <th>Date</th>
-                    <th class="text-end">Total</th>
-                    <th>Valid Until</th>
-                    <th>Status</th>
-                    <th class="text-center">Actions</th>
-                </tr>
+                    <tr>
+                        <th>#</th>
+                        <th>Estimate No</th>
+                        <th>Party</th>
+                        <th>Purpose</th>
+                        <th>Date</th>
+                        <th class="text-end">Total</th>
+                        <th>Valid Until</th>
+                        <th>Status</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
             </thead>
             <tbody>
                 <?php if (empty($estimates)): ?>
-                    <tr><td colspan="8" class="text-center text-muted py-4">No estimates found.</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-4">No estimates found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($estimates as $idx => $est): ?>
                         <tr>
                             <td><?= $pagination['offset'] + $idx + 1 ?></td>
                             <td class="fw-bold"><?= sanitize($est['estimate_no']) ?></td>
                             <td><?= sanitize($est['party_name'] ?? 'Walk-in') ?></td>
+                            <td><?= sanitize($est['purpose'] ?? '-') ?></td>
                             <td><?= dateFormatted($est['date']) ?></td>
                             <td class="text-end fw-bold"><?= money($est['total']) ?></td>
                             <td><?= $est['valid_until'] ? dateFormatted($est['valid_until']) : '-' ?></td>
@@ -776,6 +797,7 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
                                 <div class="btn-group btn-group-sm">
                                     <a href="estimates.php?mode=form&edit=<?= $est['id'] ?>" class="btn btn-outline-primary" title="Edit"><i class="fas fa-edit"></i></a>
                                     <button type="button" class="btn btn-outline-secondary" title="PDF" onclick="window.open('pdf_estimate.php?id=<?= $est['id'] ?>','_blank')"><i class="fas fa-file-pdf"></i></button>
+                                    <button type="button" class="btn btn-outline-info" title="Email" onclick="sendEstimateEmail(<?= $est['id'] ?>, '<?= sanitize($est['party_name'] ?? '') ?>')"><i class="fas fa-envelope"></i></button>
                                     <?php if ($est['status'] === 'accepted'): ?>
                                         <a href="estimates.php?convert=<?= $est['id'] ?>&csrf=<?= csrfToken() ?>" class="btn btn-outline-success" title="Convert to Sale" onclick="return confirm('Convert this estimate to a sale invoice?')"><i class="fas fa-exchange-alt"></i></a>
                                     <?php endif; ?>
@@ -800,5 +822,70 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
 <?php endif; ?>
 
 <?php endif; ?>
+
+<div class="modal fade" id="emailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content" style="border-radius:14px;overflow:hidden;">
+            <div class="modal-body text-center py-4" id="emailModalBody">
+                <div id="emailModalLoading">
+                    <div class="spinner-border text-primary mb-3" role="status" style="width:3rem;height:3rem;"></div>
+                    <p class="mb-0 fw-semibold">Sending email...</p>
+                </div>
+                <div id="emailModalResult" style="display:none;">
+                    <div id="emailModalIcon"></div>
+                    <h5 class="mt-2" id="emailModalTitle"></h5>
+                    <p class="text-muted mb-0" id="emailModalMessage"></p>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0 justify-content-center" id="emailModalFooter" style="display:none;">
+                <button type="button" class="btn btn-light px-3" style="border-radius:8px;font-size:14px;" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function sendEstimateEmail(id, partyName) {
+    var modal = new bootstrap.Modal(document.getElementById('emailModal'));
+    document.getElementById('emailModalLoading').style.display = 'block';
+    document.getElementById('emailModalResult').style.display = 'none';
+    document.getElementById('emailModalFooter').style.display = 'none';
+    modal.show();
+
+    var formData = new FormData();
+    formData.append('id', id);
+
+    fetch('api/send_estimate_email.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(function(r) { return r.json().then(function(data) { return {status: r.status, data: data}; }); })
+    .then(function(result) {
+        document.getElementById('emailModalLoading').style.display = 'none';
+        document.getElementById('emailModalResult').style.display = 'block';
+        document.getElementById('emailModalFooter').style.display = 'flex';
+        var icon = document.getElementById('emailModalIcon');
+        var title = document.getElementById('emailModalTitle');
+        var msg = document.getElementById('emailModalMessage');
+        if (result.data.success) {
+            icon.innerHTML = '<i class="fas fa-check-circle text-success" style="font-size:3rem;"></i>';
+            title.textContent = 'Email Sent!';
+            msg.textContent = result.data.message;
+        } else {
+            icon.innerHTML = '<i class="fas fa-exclamation-circle text-danger" style="font-size:3rem;"></i>';
+            title.textContent = 'Failed to Send';
+            msg.textContent = result.data.error || 'Could not send email.';
+        }
+    })
+    .catch(function() {
+        document.getElementById('emailModalLoading').style.display = 'none';
+        document.getElementById('emailModalResult').style.display = 'block';
+        document.getElementById('emailModalFooter').style.display = 'flex';
+        document.getElementById('emailModalIcon').innerHTML = '<i class="fas fa-exclamation-circle text-danger" style="font-size:3rem;"></i>';
+        document.getElementById('emailModalTitle').textContent = 'Network Error';
+        document.getElementById('emailModalMessage').textContent = 'Could not connect to server.';
+    });
+}
+</script>
 
 <?php include 'footer.php'; ?>

@@ -71,7 +71,7 @@ function numToWords($num) {
     return trim($words) . ' Rupees' . ($paise > 0 ? ' and ' . $convertH($paise) . ' Paise' : '') . ' Only';
 }
 
-$statusColors = ['accepted' => ['#d4edda','#155724'], 'rejected' => ['#f8d7da','#721c24'], 'converted' => ['#d1ecf1','#0c5460'], 'sent' => ['#fff3cd','#856404'], 'draft' => ['#e2e3e5','#383d41']];
+$statusColors = ['draft' => ['#e2e3e5','#383d41'], 'sent' => ['#fff3cd','#856404'], 'accepted' => ['#d4edda','#155724'], 'rejected' => ['#f8d7da','#721c24'], 'converted' => ['#d1ecf1','#0c5460']];
 $sc = $statusColors[$est['status']] ?? ['#e2e3e5','#383d41'];
 
 // Round off logic
@@ -94,14 +94,25 @@ foreach ($items as $idx => $itm) {
     </tr>';
 }
 
-$notesHtml = !empty($est['notes']) ? '<div style="margin-top:15px;padding:12px 15px;background:#fcfcfc;border:1px solid #eee;border-radius:4px;font-size:13px;color:#666;"><strong>Notes:</strong><br>' . nl2br(sanitize($est['notes'])) . '</div>' : '';
+$notesHtml = !empty($est['notes']) ? '<div style="margin-bottom:12px;padding:10px 14px;background:#fafafa;border:1px solid #eee;border-radius:4px;font-size:12px;color:#1a1a1a;"><strong>Notes:</strong><br>' . nl2br(sanitize($est['notes'])) . '</div>' : '';
 
-$logoPath = !empty($company['logo']) ? __DIR__ . '/uploads/logo/' . $company['logo'] : '';
-$logoHtml = ($logoPath && file_exists($logoPath)) ? '<img src="file:///' . str_replace('\\', '/', $logoPath) . '" alt="Logo" style="max-height:50px;margin-bottom:8px;">' : '';
+$logoHtml = '';
+if (!empty($company['logo'])) {
+    $logoPath = __DIR__ . '/uploads/logo/' . $company['logo'];
+    if (is_file($logoPath)) {
+        $imgData = base64_encode(file_get_contents($logoPath));
+        $mime = mime_content_type($logoPath);
+        $logoHtml = '<img src="data:' . $mime . ';base64,' . $imgData . '" alt="Logo" style="max-height:50px;display:block">';
+    }
+}
 $companyName = sanitize($company['name'] ?? $company['company_name'] ?? 'Your Company');
-$companyAddr = !empty($company['address']) ? '<p>' . sanitize($company['address']) . (!empty($company['city']) ? ', ' . sanitize($company['city']) : '') . '</p>' : '';
-$companyPhone = !empty($company['phone']) ? '<p>Phone: ' . sanitize($company['phone']) . '</p>' : '';
-$companyGstin = !empty($company['gstin']) ? '<p>GSTIN: ' . sanitize($company['gstin']) . '</p>' : '';
+$companyDetails = array_filter([
+    !empty($company['address']) ? sanitize($company['address']) . (!empty($company['city']) ? ', ' . sanitize($company['city']) : '') : '',
+    !empty($company['phone']) ? 'Phone: ' . sanitize($company['phone']) : '',
+    !empty($company['email']) ? 'Email: ' . sanitize($company['email']) : '',
+    !empty($company['gstin']) ? 'GSTIN: ' . sanitize($company['gstin']) : '',
+]);
+$companyInfoHtml = !empty($companyDetails) ? '<p style="font-size:11px;color:#555;">' . implode(' | ', $companyDetails) . '</p>' : '';
 
 $partyName = sanitize($est['party_name'] ?? 'Walk-in Customer');
 $partyPhone = !empty($est['party_phone']) ? 'Phone: ' . sanitize($est['party_phone']) . '<br>' : '';
@@ -109,56 +120,103 @@ $partyAddrParts = array_filter([$est['party_address'], $est['party_city'], $est[
 $partyAddr = !empty($partyAddrParts) ? sanitize(implode(', ', $partyAddrParts)) . '<br>' : '';
 $partyGstin = !empty($est['party_gstin']) ? 'GSTIN: ' . sanitize($est['party_gstin']) : '';
 
+$descHtml = '';
+if (!empty($est['purpose']) || !empty($est['service_needed'])) {
+    $desc = 'We are pleased to submit our estimate';
+    if (!empty($est['purpose'])) $desc .= ' for ' . sanitize($est['purpose']);
+    if (!empty($est['service_needed'])) $desc .= ' as per your requirement for ' . sanitize($est['service_needed']);
+    $desc .= '. Please find the detailed breakdown below.';
+    $descHtml = '<p style="font-size:12px;color:#1a1a1a;margin-bottom:14px;padding:10px 14px;background:#fafafa;border-left:3px solid #e02020;border-radius:4px;">' . $desc . '</p>';
+}
+
+$termsHtml = '<div style="margin-bottom:12px;padding:10px 14px;background:#fafafa;border:1px solid #eee;border-radius:4px;font-size:11px;color:#1a1a1a;">
+    <strong style="font-size:12px;">Terms &amp; Conditions:</strong>
+    <ol style="margin:4px 0 0;padding-left:16px;">
+        <li>This estimate is valid for ' . (!empty($est['valid_until']) ? dateFormatted($est['valid_until']) : '30 days') . ' from the date of issue.</li>
+        <li>Payment terms: 50% advance required to confirm the order. Balance payable upon completion.</li>
+        <li>Any additional work not mentioned in this estimate will be charged extra.</li>
+        <li>Delivery timeline will be confirmed upon order confirmation and advance payment.</li>
+        <li>Warranty/guarantee terms will be as per company policy and manufacturer specifications.</li>
+    </ol>
+</div>';
+
 $roundOffSign = $roundOff >= 0 ? '' : '-';
 $roundOffClass = $roundOff >= 0 ? '' : 'color:#dc3545;';
+
+$fontCss = '';
+$arialSrc = realpath('C:\Windows\Fonts\ARIAL.TTF');
+if ($arialSrc && is_file($arialSrc)) {
+    $fontDir = __DIR__ . '/vendor/dompdf/dompdf/lib/fonts/';
+    $arialDest = $fontDir . 'Arial.ttf';
+    if (!is_file($arialDest)) {
+        @copy($arialSrc, $arialDest);
+    }
+    if (is_file($arialDest)) {
+        $arialBoldSrc = realpath('C:\Windows\Fonts\arialbd.ttf');
+        $arialBoldCss = '';
+        if ($arialBoldSrc && is_file($arialBoldSrc)) {
+            $arialBoldDest = $fontDir . 'Arial-Bold.ttf';
+            if (!is_file($arialBoldDest)) {
+                @copy($arialBoldSrc, $arialBoldDest);
+            }
+            if (is_file($arialBoldDest)) {
+                $arialBoldCss = '@font-face { font-family: "Arial"; src: url("file:///' . str_replace('\\', '/', $arialBoldDest) . '") format("truetype"); font-weight: bold; }';
+            }
+        }
+        $fontCss = '@font-face { font-family: "Arial"; src: url("file:///' . str_replace('\\', '/', $arialDest) . '") format("truetype"); }' . $arialBoldCss;
+    }
+}
 
 $html = '
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8">
 <style>
-    body { font-family: DejaVu Sans, sans-serif; font-size: 13px; color: #333; margin: 0; padding: 20px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 2px solid #eef0f4; }
-    .company-info h2 { font-size: 20px; margin: 0 0 4px; color: #1a1a2e; }
-    .company-info p { margin: 2px 0; font-size: 12px; color: #555; }
-    .meta { text-align: right; }
-    .meta h3 { font-size: 16px; color: #2962FF; margin: 0 0 8px; letter-spacing: 1px; }
-    .meta p { margin: 2px 0; font-size: 12px; }
-    .status-badge { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-    .customer { margin-bottom: 20px; padding: 12px 15px; background: #f8f9fc; border-radius: 6px; font-size: 12px; }
-    .customer h4 { font-size: 12px; margin: 0 0 5px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
-    .customer p { margin: 2px 0; }
-    table.items { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 12px; }
-    table.items th { background: #f8f9fc; padding: 8px 10px; text-align: left; font-size: 11px; text-transform: uppercase; color: #666; letter-spacing: 0.3px; border-bottom: 2px solid #e5e7eb; }
-    table.items td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
-    table.items td small { font-size: 10px; color: #888; }
-    .totals { margin-left: auto; width: 300px; }
-    .totals table { width: 100%; font-size: 13px; }
-    .totals td { padding: 4px 0; }
-    .grand td { border-top: 2px solid #1a1a2e; padding-top: 8px; font-size: 16px; font-weight: 700; color: #1a1a2e; }
-    .signatures { display: flex; justify-content: space-between; margin-top: 35px; padding-top: 10px; }
-    .sig-box { width: 200px; }
-    .sig-box .line { border-top: 1px solid #333; margin-bottom: 5px; }
-    .sig-box p { font-size: 11px; color: #666; margin: 0; }
-    .footer { text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; font-size: 12px; color: #888; }
+    ' . $fontCss . '
+    @page { margin: 25px 30px; }
+    body { font-family: Arial, DejaVu Sans, sans-serif; font-size: 13px; color: #1a1a1a; margin: 0; padding: 0; line-height: 1.5; }
+    .header { margin-bottom: 20px; padding-bottom: 18px; border-bottom: 3px solid #e02020; }
+    .company-info h2 { font-size: 24px; margin: 0 0 2px; color: #1a1a1a; font-weight: bold; text-transform: uppercase; }
+    .company-info p { margin: 1px 0; font-size: 11px; color: #1a1a1a; line-height: 1.4; }
+    .meta-center { text-align: center; }
+    .meta-center h3 { font-size: 24px; color: #e02020; margin: 0 0 2px; letter-spacing: 2px; font-weight: bold; }
+    .meta-details { text-align: center; margin-top: 8px; font-size: 12px; color: #1a1a1a; }
+    .meta-details p { margin: 0; }
+    .meta-details strong { color: #1a1a1a; }
+    .status-badge { display: inline-block; padding: 3px 14px; border-radius: 12px; font-size: 11px; font-weight: 700; margin-top: 4px; }
+    .customer { margin-bottom: 14px; padding: 10px 14px; background: #f5f7fa; border-radius: 8px; font-size: 12px; border-left: 4px solid #e02020; }
+    .customer h4 { font-size: 11px; margin: 0 0 4px; color: #e02020; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; }
+    .customer p { margin: 1px 0; color: #1a1a1a; }
+    .customer strong { color: #1a1a1a; }
+    table.items { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 12px; }
+    table.items th { background: #f5f7fa; padding: 8px 10px; text-align: left; font-size: 10px; text-transform: uppercase; color: #1a1a1a; letter-spacing: 0.5px; border-bottom: 2px solid #dfe6e9; font-weight: bold; }
+    table.items td { padding: 6px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; color: #1a1a1a; }
+    table.items td small { font-size: 10px; color: #1a1a1a; }
+    .totals { margin-left: auto; width: 240px; }
+    .totals table { width: 100%; font-size: 12px; }
+    .totals td { padding: 3px 0; color: #1a1a1a; }
+    .totals tr:last-child td { border-top: 2px solid #1a1a1a; padding-top: 6px; font-size: 15px; font-weight: bold; color: #1a1a1a; }
+    .signature { text-align: right; margin-top: 30px; padding-top: 8px; }
+    .signature .line { border-top: 2px solid #1a1a1a; margin-bottom: 4px; width: 200px; margin-left: auto; }
+    .signature p { font-size: 11px; color: #1a1a1a; margin: 0; }
+    .footer { text-align: center; margin-top: 18px; padding-top: 12px; border-top: 1px solid #dfe6e9; font-size: 11px; color: #1a1a1a; }
 </style>
 </head><body>
     <div class="header">
-        <div class="company-info">' . $logoHtml . '<h2>' . $companyName . '</h2>' . $companyAddr . $companyPhone . $companyGstin . '</div>
-        <div class="meta">
-            <h3>ESTIMATE</h3>
-            <p><strong>No:</strong> ' . sanitize($est['estimate_no']) . '</p>
-            <p><strong>Date:</strong> ' . dateFormatted($est['date']) . '</p>
-            <p><strong>Valid Until:</strong> ' . ($est['valid_until'] ? dateFormatted($est['valid_until']) : '-') . '</p>
-            <p><span class="status-badge" style="background:' . $sc[0] . ';color:' . $sc[1] . ';">' . ucfirst($est['status']) . '</span></p>
+        <div class="company-info"><table style="border:none;border-collapse:collapse"><tr><td style="vertical-align:middle;padding:0 14px 0 0;width:1px">' . $logoHtml . '</td><td style="vertical-align:middle;padding:0"><h2>' . $companyName . '</h2>' . $companyInfoHtml . '</td></tr></table></div>
+        <div class="meta-center"><h3>ESTIMATE</h3></div>
+        <div class="meta-details">
+            <p><strong>No:</strong> ' . sanitize($est['estimate_no']) . ' &nbsp;&nbsp; <strong>Date:</strong> ' . dateFormatted($est['date']) . ' &nbsp;&nbsp; <strong>Valid Until:</strong> ' . ($est['valid_until'] ? dateFormatted($est['valid_until']) : '-') . '
+            ' . ($est['status'] !== 'draft' ? ' &nbsp;&nbsp; <span class="status-badge" style="background:' . $sc[0] . ';color:' . $sc[1] . ';">' . ucfirst($est['status']) . '</span>' : '') . '</p>
         </div>
     </div>
     <div class="customer">
-        <h4>Bill To:</h4>
+        <h4>To:</h4>
         <p><strong>' . $partyName . '</strong></p>
         ' . (!empty($partyAddr) ? '<p>' . $partyAddr . '</p>' : '') . '
         ' . (!empty($partyPhone) ? '<p>' . $partyPhone . '</p>' : '') . '
         ' . (!empty($partyGstin) ? '<p>' . $partyGstin . '</p>' : '') . '
     </div>
+    ' . $descHtml . '
     <table class="items">
         <tr><th>#</th><th>Item</th><th>HSN</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Disc</th><th style="text-align:right">Tax</th><th style="text-align:right">Amount</th></tr>
         ' . $itemRows . '
@@ -173,11 +231,12 @@ $html = '
             <tr class="grand"><td style="text-align:right">Grand Total</td><td style="text-align:right">' . money($roundedTotal) . '</td></tr>
         </table>
     </div>
-    <p style="font-size:12px;color:#555;"><strong>Amount in Words:</strong> ' . numToWords($roundedTotal) . '</p>
+    <p style="font-size:12px;color:#1a1a1a;padding:8px 10px;background:#fafafa;border-radius:4px;margin-bottom:12px;"><strong>Amount in Words:</strong> ' . numToWords($roundedTotal) . '</p>
     ' . $notesHtml . '
-    <div class="signatures">
-        <div class="sig-box"><div class="line"></div><p>Authorized Signatory</p></div>
-        <div class="sig-box"><div class="line"></div><p>Customer Signature</p></div>
+    ' . $termsHtml . '
+    <div class="signature">
+        <div class="line"></div>
+        <p>Authorized Signatory</p>
     </div>
     <div class="footer"><p>' . sanitize($footerText) . '</p></div>
 </body></html>';
@@ -186,8 +245,11 @@ while (ob_get_level()) ob_end_clean();
 
 $options = new Options();
 $options->set('isRemoteEnabled', true);
+$options->set('allowedProtocols', ['file://' => ['rules' => []], 'data://' => ['rules' => []]]);
 $options->set('isHtml5ParserEnabled', true);
 $options->set('logOutputFile', '');
+$options->set('isFontSubsettingEnabled', true);
+$options->set('defaultMediaType', 'print');
 
 $dompdf = new Dompdf($options);
 $dompdf->loadHtml($html);

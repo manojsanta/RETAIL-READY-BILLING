@@ -34,24 +34,23 @@ function numToWords($num) {
     $paise = $num % 100;
     $num = intval($num / 100);
     if ($num == 0 && $paise == 0) return 'Zero Rupees';
-    function convertH($n) {
-        global $ones, $tens;
+    $convertH = function($n) use ($ones, $tens) {
         $r = '';
         if ($n >= 100) { $r .= $ones[intval($n / 100)] . ' Hundred '; $n %= 100; }
         if ($n >= 20) { $r .= $tens[intval($n / 10)] . ' '; $n %= 10; }
         if ($n > 0) { $r .= $ones[$n] . ' '; }
         return trim($r);
-    }
+    };
     $words = '';
     $cr = intval($num / 10000000); $num %= 10000000;
     $lk = intval($num / 100000); $num %= 100000;
     $th = intval($num / 1000); $num %= 1000;
-    if ($cr > 0) $words .= convertH($cr) . ' Crore ';
-    if ($lk > 0) $words .= convertH($lk) . ' Lakh ';
-    if ($th > 0) $words .= convertH($th) . ' Thousand ';
-    if ($num > 0) $words .= convertH($num);
+    if ($cr > 0) $words .= $convertH($cr) . ' Crore ';
+    if ($lk > 0) $words .= $convertH($lk) . ' Lakh ';
+    if ($th > 0) $words .= $convertH($th) . ' Thousand ';
+    if ($num > 0) $words .= $convertH($num);
     $words = trim($words) . ' Rupees';
-    if ($paise > 0) $words .= ' and ' . convertH($paise) . ' Paise';
+    if ($paise > 0) $words .= ' and ' . $convertH($paise) . ' Paise';
     $words .= ' Only';
     return $words;
 }
@@ -87,7 +86,7 @@ document.addEventListener('DOMContentLoaded', function() {
 .invoice-totals table { width: 100%; font-size: 14px; }
 .invoice-totals td { padding: 5px 0; }
 .invoice-totals .grand-total td { border-top: 2px solid #1a1a2e; padding-top: 10px; font-size: 18px; font-weight: 700; color: #1a1a2e; }
-.signature-area { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 10px; }
+.signature-area { display: flex; margin-top: 40px; padding-top: 10px; }
 .signature-box { width: 200px; }
 .signature-box .line { border-top: 1px solid #333; margin-bottom: 6px; }
 .signature-box p { font-size: 12px; color: #666; margin: 0; }
@@ -107,6 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <a href="estimates.php?mode=form&edit=<?= $est['id'] ?>" class="btn btn-primary btn-sm"><i class="fas fa-edit me-1"></i> Edit</a>
         <button type="button" class="btn btn-info btn-sm" onclick="window.print()"><i class="fas fa-print me-1"></i> Print</button>
         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.location.href='estimate_view.php?id=<?= $est['id'] ?>&print=1'"><i class="fas fa-file-pdf me-1"></i> PDF</button>
+        <button type="button" class="btn btn-outline-info btn-sm" onclick="sendEstimateEmail(<?= $est['id'] ?>, '<?= sanitize($est['party_name'] ?? '') ?>')"><i class="fas fa-envelope me-1"></i> Email</button>
         <a href="estimates.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Back</a>
     </div>
 </div>
@@ -142,18 +142,32 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 
     <div class="customer-info">
-        <h4>Bill To:</h4>
+        <h4>To:</h4>
         <strong><?= sanitize($est['party_name'] ?? 'Walk-in Customer') ?></strong><br>
         <?php if (!empty($est['party_phone'])): ?>
             Phone: <?= sanitize($est['party_phone']) ?><br>
         <?php endif; ?>
-        <?php if (!empty($est['party_address'])): ?>
-            <?= sanitize($est['party_address']) ?><?= !empty($est['party_city']) ? ', ' . sanitize($est['party_city']) : '' ?><br>
+        <?php
+        $addrParts = array_filter([$est['party_address'], $est['party_city'], $est['party_state'], $est['party_pincode']]);
+        if (!empty($addrParts)): ?>
+            <?= sanitize(implode(', ', $addrParts)) ?><br>
         <?php endif; ?>
         <?php if (!empty($est['party_gstin'])): ?>
             GSTIN: <?= sanitize($est['party_gstin']) ?>
         <?php endif; ?>
     </div>
+
+    <?php if (!empty($est['purpose'])): ?>
+        <div style="margin-bottom:10px;"><strong>Purpose:</strong> <?= sanitize($est['purpose']) ?></div>
+    <?php endif; ?>
+    <?php if (!empty($est['service_needed'])): ?>
+        <div style="margin-bottom:8px;"><strong>Service Needed:</strong> <?= nl2br(sanitize($est['service_needed'])) ?></div>
+    <?php endif; ?>
+    <?php if (!empty($est['purpose']) || !empty($est['service_needed'])): ?>
+        <div style="margin-bottom:15px;padding:10px 14px;background:#fcfcfc;border-left:3px solid #2962FF;border-radius:4px;font-size:13px;color:#555;">
+            We are pleased to submit our estimate<?= !empty($est['purpose']) ? ' for ' . sanitize($est['purpose']) : '' ?><?= !empty($est['service_needed']) ? ' as per your requirement for ' . sanitize($est['service_needed']) : '' ?>. Please find the detailed breakdown below.
+        </div>
+    <?php endif; ?>
 
     <table class="items-table">
         <thead>
@@ -206,14 +220,21 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
     <?php endif; ?>
 
-    <div class="signature-area">
+    <div style="margin-top:15px;padding:10px 14px;background:#fcfcfc;border:1px solid #eee;border-radius:6px;font-size:12px;color:#666;">
+        <strong style="font-size:13px;">Terms &amp; Conditions:</strong>
+        <ol style="margin:5px 0 0;padding-left:20px;">
+            <li>This estimate is valid for <?= !empty($est['valid_until']) ? dateFormatted($est['valid_until']) : '30 days' ?> from the date of issue.</li>
+            <li>Payment terms: 50% advance required to confirm the order. Balance payable upon completion.</li>
+            <li>Any additional work not mentioned in this estimate will be charged extra.</li>
+            <li>Delivery timeline will be confirmed upon order confirmation and advance payment.</li>
+            <li>Warranty/guarantee terms will be as per company policy and manufacturer specifications.</li>
+        </ol>
+    </div>
+
+    <div class="signature-area" style="justify-content:flex-end;">
         <div class="signature-box">
             <div class="line"></div>
             <p>Authorized Signatory</p>
-        </div>
-        <div class="signature-box">
-            <div class="line"></div>
-            <p>Customer Signature</p>
         </div>
     </div>
 
@@ -221,5 +242,70 @@ document.addEventListener('DOMContentLoaded', function() {
         <p><?= sanitize($footerText) ?></p>
     </div>
 </div>
+
+<div class="modal fade" id="emailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content" style="border-radius:14px;overflow:hidden;">
+            <div class="modal-body text-center py-4" id="emailModalBody">
+                <div id="emailModalLoading">
+                    <div class="spinner-border text-primary mb-3" role="status" style="width:3rem;height:3rem;"></div>
+                    <p class="mb-0 fw-semibold">Sending email...</p>
+                </div>
+                <div id="emailModalResult" style="display:none;">
+                    <div id="emailModalIcon"></div>
+                    <h5 class="mt-2" id="emailModalTitle"></h5>
+                    <p class="text-muted mb-0" id="emailModalMessage"></p>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0 justify-content-center" id="emailModalFooter" style="display:none;">
+                <button type="button" class="btn btn-light px-3" style="border-radius:8px;font-size:14px;" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function sendEstimateEmail(id, partyName) {
+    var modal = new bootstrap.Modal(document.getElementById('emailModal'));
+    document.getElementById('emailModalLoading').style.display = 'block';
+    document.getElementById('emailModalResult').style.display = 'none';
+    document.getElementById('emailModalFooter').style.display = 'none';
+    modal.show();
+
+    var formData = new FormData();
+    formData.append('id', id);
+
+    fetch('api/send_estimate_email.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(function(r) { return r.json().then(function(data) { return {status: r.status, data: data}; }); })
+    .then(function(result) {
+        document.getElementById('emailModalLoading').style.display = 'none';
+        document.getElementById('emailModalResult').style.display = 'block';
+        document.getElementById('emailModalFooter').style.display = 'flex';
+        var icon = document.getElementById('emailModalIcon');
+        var title = document.getElementById('emailModalTitle');
+        var msg = document.getElementById('emailModalMessage');
+        if (result.data.success) {
+            icon.innerHTML = '<i class="fas fa-check-circle text-success" style="font-size:3rem;"></i>';
+            title.textContent = 'Email Sent!';
+            msg.textContent = result.data.message;
+        } else {
+            icon.innerHTML = '<i class="fas fa-exclamation-circle text-danger" style="font-size:3rem;"></i>';
+            title.textContent = 'Failed to Send';
+            msg.textContent = result.data.error || 'Could not send email.';
+        }
+    })
+    .catch(function() {
+        document.getElementById('emailModalLoading').style.display = 'none';
+        document.getElementById('emailModalResult').style.display = 'block';
+        document.getElementById('emailModalFooter').style.display = 'flex';
+        document.getElementById('emailModalIcon').innerHTML = '<i class="fas fa-exclamation-circle text-danger" style="font-size:3rem;"></i>';
+        document.getElementById('emailModalTitle').textContent = 'Network Error';
+        document.getElementById('emailModalMessage').textContent = 'Could not connect to server.';
+    });
+}
+</script>
 
 <?php include 'footer.php'; ?>

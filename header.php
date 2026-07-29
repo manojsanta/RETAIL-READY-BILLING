@@ -8,7 +8,7 @@ $user = currentUser();
 $company = getCompany();
 $initials = getInitials($user['full_name'] ?? $user['username'] ?? 'U');
 $companyName = $company['name'] ?? 'Retail Ready';
-$companyLogo = !empty($company['logo']) ? 'assets/images/' . $company['logo'] : null;
+$companyLogo = !empty($company['logo']) ? 'uploads/logo/' . $company['logo'] : null;
 $activeFY = isFinancialYearSelected() ? currentFY() : null;
 ?>
 <!DOCTYPE html>

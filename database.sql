@@ -444,6 +444,8 @@ CREATE TABLE `estimates` (
   `discount_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `total` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `valid_until` DATE DEFAULT NULL,
+  `purpose` VARCHAR(255) DEFAULT NULL,
+  `service_needed` TEXT DEFAULT NULL,
   `notes` TEXT DEFAULT NULL,
   `status` ENUM('draft','sent','accepted','rejected','converted') NOT NULL DEFAULT 'draft',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
