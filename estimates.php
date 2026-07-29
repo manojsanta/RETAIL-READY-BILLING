@@ -727,15 +727,30 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
 
 <?php else: ?>
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<style>
+.estimate-compact .card { margin-bottom: 4px; }
+.estimate-compact .card-body { padding: 6px 10px; }
+.estimate-compact .form-label { margin-bottom: 1px; font-size: 11px; }
+.estimate-compact .form-control, .estimate-compact .form-select { font-size: 12px; padding: 2px 6px; height: auto; }
+.estimate-compact .table td, .estimate-compact .table th { padding: 4px 6px; font-size: 12px; }
+.estimate-compact .btn-group .btn { padding: 2px 6px; font-size: 11px; }
+.estimate-compact .badge { font-size: 10px; padding: 2px 6px; }
+.estimate-compact .btn-sm { font-size: 11px; padding: 2px 8px; }
+.estimate-compact .row { margin: -2px; }
+.estimate-compact .row > [class*=col-] { padding: 2px; }
+.pagination-sm { margin-bottom: 0; }
+</style>
+
+<div class="estimate-compact">
+<div class="d-flex justify-content-between align-items-center mb-2">
     <div>
         <a href="estimates.php?mode=form" class="btn btn-primary btn-sm"><i class="fas fa-plus me-1"></i> New Estimate</a>
     </div>
 </div>
 
-<div class="card mb-3">
+<div class="card mb-2">
     <div class="card-body">
-        <form method="GET" class="row g-2 align-items-end">
+        <form method="GET" class="row g-1 align-items-end">
             <div class="col-md-3">
                 <label class="form-label">Search</label>
                 <input type="text" name="search" class="form-control form-control-sm" placeholder="Estimate No, Party..." value="<?= sanitize($search) ?>">
@@ -744,7 +759,7 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
                 <label class="form-label">Status</label>
                 <select name="status_filter" class="form-select form-select-sm">
                     <option value="">All</option>
-                                    <option value="draft" <?= $statusFilter === 'draft' ? 'selected' : '' ?> hidden>Draft</option>
+                    <option value="draft" <?= $statusFilter === 'draft' ? 'selected' : '' ?> hidden>Draft</option>
                     <option value="sent" <?= $statusFilter === 'sent' ? 'selected' : '' ?>>Sent</option>
                     <option value="accepted" <?= $statusFilter === 'accepted' ? 'selected' : '' ?>>Accepted</option>
                     <option value="rejected" <?= $statusFilter === 'rejected' ? 'selected' : '' ?>>Rejected</option>
@@ -763,21 +778,21 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
     <div class="table-responsive">
         <table class="table table-hover mb-0">
             <thead class="table-light">
-                    <tr>
-                        <th>#</th>
-                        <th>Estimate No</th>
-                        <th>Party</th>
-                        <th>Purpose</th>
-                        <th>Date</th>
-                        <th class="text-end">Total</th>
-                        <th>Valid Until</th>
-                        <th>Status</th>
-                        <th class="text-center">Actions</th>
-                    </tr>
+                <tr>
+                    <th>#</th>
+                    <th>Estimate No</th>
+                    <th>Party</th>
+                    <th>Purpose</th>
+                    <th>Date</th>
+                    <th class="text-end">Total</th>
+                    <th>Valid Until</th>
+                    <th>Status</th>
+                    <th class="text-center">Actions</th>
+                </tr>
             </thead>
             <tbody>
                 <?php if (empty($estimates)): ?>
-                    <tr><td colspan="9" class="text-center text-muted py-4">No estimates found.</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-3">No estimates found.</td></tr>
                 <?php else: ?>
                     <?php foreach ($estimates as $idx => $est): ?>
                         <tr>
@@ -812,14 +827,13 @@ function esc(t) { var d = document.createElement('div'); d.textContent = t; retu
     </div>
 </div>
 
-<?php if ($pagination['total_pages'] > 1): ?>
-    <nav class="mt-3">
-        <?php
-        $baseUrl = 'estimates.php?' . http_build_query(array_diff_key($_GET, ['page' => '']));
-        echo paginationLinks($pagination, $baseUrl);
-        ?>
-    </nav>
-<?php endif; ?>
+<nav class="mt-2">
+    <?php
+    $baseUrl = 'estimates.php?' . http_build_query(array_diff_key($_GET, ['page' => '']));
+    echo paginationLinks($pagination, $baseUrl);
+    ?>
+</nav>
+</div>
 
 <?php endif; ?>
 
