@@ -118,6 +118,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
+        // Check stock availability (accounting for duplicate items across rows)
+        $itemQtyMap = [];
+        foreach ($validItems as $vi) {
+            $itemQtyMap[$vi['item_id']] = ($itemQtyMap[$vi['item_id']] ?? 0) + $vi['qty'];
+        }
+        foreach ($itemQtyMap as $iid => $qtySum) {
+            $stockRow = fetch("SELECT name, current_stock FROM items WHERE id = ?", [$iid]);
+            if ($stockRow && (int) $stockRow['current_stock'] < $qtySum) {
+                $errors[] = "Insufficient stock for '{$stockRow['name']}' (available: {$stockRow['current_stock']}, required: $qtySum).";
+            }
+        }
+    }
+
+    if (empty($errors)) {
         // Recalculate totals from valid items
         $calcSubtotal = 0;
         $calcTax = 0;
@@ -135,7 +149,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $calcGrand = round($calcGrand, 2);
         $dueAmount = max(0, round($calcGrand - $paidAmount, 2));
 
-        if ($dueAmount <= 0) {
+        if ($saleMode === 'cash' && round($paidAmount, 2) != round($calcGrand, 2)) {
+            $errors[] = 'For cash sales, the amount paid must equal the total amount (₹' . number_format($calcGrand, 2) . ').';
+        }
+        if (!empty($errors)) {
+            $paymentStatus = 'unpaid';
+            $dueAmount = round($calcGrand - $paidAmount, 2);
+        } elseif ($dueAmount <= 0) {
             $paymentStatus = 'paid';
         } elseif ($paidAmount > 0) {
             $paymentStatus = 'partial';
@@ -143,39 +163,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $paymentStatus = 'unpaid';
         }
 
-        global $pdo;
-        $pdo->beginTransaction();
-        try {
-            $saleId = insertId(
-                "INSERT INTO sales (invoice_no, party_id, user_id, date, subtotal, tax_amount, discount_amount, total, paid_amount, due_amount, payment_status, payment_method, notes, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                [$invoiceNo, $partyId ?: null, $_SESSION['user_id'], $saleDate, $calcSubtotal, $calcTax, $calcDiscount, $calcGrand, $paidAmount, $dueAmount, $paymentStatus, $paymentMethod, $notes, $paymentStatus === 'paid' ? 'paid' : 'draft']
-            );
-
-            foreach ($validItems as $vi) {
-                query(
-                    "INSERT INTO sale_items (sale_id, item_id, qty, rate, discount, tax_rate, tax_amount, total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                    [$saleId, $vi['item_id'], $vi['qty'], $vi['rate'], $vi['discount'], $vi['tax_rate'], $vi['tax_amount'], $vi['total']]
+        if (empty($errors)) {
+            global $pdo;
+            $pdo->beginTransaction();
+            try {
+                $saleId = insertId(
+                    "INSERT INTO sales (invoice_no, party_id, user_id, date, subtotal, tax_amount, discount_amount, total, paid_amount, due_amount, payment_status, payment_method, notes, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                    [$invoiceNo, $partyId ?: null, $_SESSION['user_id'], $saleDate, $calcSubtotal, $calcTax, $calcDiscount, $calcGrand, $paidAmount, $dueAmount, $paymentStatus, $paymentMethod, $notes, $paymentStatus === 'paid' ? 'paid' : 'draft']
                 );
-                updateStock($vi['item_id'], $vi['qty'], 'subtract');
-            }
 
-            if ($paidAmount > 0) {
-                $receiptNo = generateReceiptNo();
-                query(
-                    "INSERT INTO payments_in (receipt_no, party_id, sale_id, date, amount, payment_method, notes, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                    [$receiptNo, $partyId, $saleId, $saleDate, $paidAmount, $paymentMethod, 'Auto: Sale ' . $invoiceNo, $_SESSION['user_id']]
-                );
-            }
+                foreach ($validItems as $vi) {
+                    query(
+                        "INSERT INTO sale_items (sale_id, item_id, qty, rate, discount, tax_rate, tax_amount, total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                        [$saleId, $vi['item_id'], $vi['qty'], $vi['rate'], $vi['discount'], $vi['tax_rate'], $vi['tax_amount'], $vi['total']]
+                    );
+                    updateStock($vi['item_id'], $vi['qty'], 'subtract');
+                }
 
-            $pdo->commit();
-            setFlash('success', 'Sale invoice created successfully.');
-            header('Location: sale_view.php?id=' . $saleId);
-            exit;
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            setFlash('danger', 'Error creating sale: ' . $e->getMessage());
-            header('Location: sale_add.php');
-            exit;
+                if ($paidAmount > 0) {
+                    $receiptNo = generateReceiptNo();
+                    query(
+                        "INSERT INTO payments_in (receipt_no, party_id, sale_id, date, amount, payment_method, notes, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                        [$receiptNo, $partyId, $saleId, $saleDate, $paidAmount, $paymentMethod, 'Auto: Sale ' . $invoiceNo, $_SESSION['user_id']]
+                    );
+                }
+
+                $pdo->commit();
+                setFlash('success', 'Sale invoice created successfully.');
+                header('Location: sale_view.php?id=' . $saleId);
+                exit;
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                setFlash('danger', 'Error creating sale: ' . $e->getMessage());
+                header('Location: sale_add.php');
+                exit;
+            }
         }
     }
 }
@@ -979,9 +1001,67 @@ include 'header.php';
     </div>
 </div>
 
+<!-- Custom Alert Modal -->
+<div class="modal fade" id="alertModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:380px;">
+        <div class="modal-content">
+            <div class="modal-header py-2 border-0 pb-0">
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center pt-0">
+                <div class="mb-2"><i class="fas fa-exclamation-triangle text-danger" style="font-size:42px;"></i></div>
+                <h6 class="fw-bold mb-1" id="alertModalTitle">Error</h6>
+                <p class="text-muted mb-0" id="alertModalMessage" style="font-size:13px;"></p>
+            </div>
+            <div class="modal-footer border-0 pt-0 justify-content-center">
+                <button type="button" class="btn btn-sm btn-primary px-4" data-bs-dismiss="modal">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var rowIndex = 1;
+
+    function showAlertModal(title, message) {
+        document.getElementById('alertModalTitle').textContent = title || 'Error';
+        document.getElementById('alertModalMessage').textContent = message || '';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('alertModal')).show();
+    }
+
+    function getRowQtyMap(excludeRow) {
+        var map = {};
+        document.querySelectorAll('.item-row').forEach(function(row) {
+            if (row === excludeRow) return;
+            var id = row.querySelector('.item-id').value;
+            if (!id) return;
+            map[id] = (map[id] || 0) + (parseFloat(row.querySelector('.item-qty').value) || 0);
+        });
+        return map;
+    }
+
+    function stockAvailableFor(row, itemStock) {
+        var id = row.querySelector('.item-id').value;
+        if (!id) return Infinity;
+        var used = getRowQtyMap(row)[id] || 0;
+        return (parseFloat(itemStock) || 0) - used;
+    }
+
+    function selectItem(row, item) {
+        var available = stockAvailableFor(row, item.current_stock);
+        if (available <= 0) {
+            showAlertModal('Out of Stock', '"' + item.name + '" has no stock available to sell.');
+            return false;
+        }
+        row.querySelector('.item-search').value = item.name;
+        row.querySelector('.item-id').value = item.id;
+        row.querySelector('.item-rate').value = parseFloat(item.sale_price).toFixed(2);
+        row.querySelector('.item-tax').value = item.tax_rate || 0;
+        row.dataset.stock = item.current_stock;
+        row.querySelector('.item-qty').value = 1;
+        return true;
+    }
 
     // === Party Search ===
     var partySearch = document.getElementById('party_search');
@@ -1127,13 +1207,13 @@ document.addEventListener('DOMContentLoaded', function() {
             partySearch.value = '';
             partyIdField.value = '';
             paymentMethodSel.innerHTML = '<option value="credit" selected>Credit</option>';
-            paidAmountInput.disabled = true;
+            paidAmountInput.readOnly = true;
             paidAmountInput.value = 0;
         } else {
             partySearch.value = walkInName;
             partyIdField.value = walkInId;
             paymentMethodSel.innerHTML = cashMethods;
-            paidAmountInput.disabled = false;
+            paidAmountInput.readOnly = true;
         }
         partyDropdown.classList.remove('show');
         refreshClearParty();
@@ -1191,12 +1271,13 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             var item = res.data;
             if (activeRow) {
-                activeRow.querySelector('.item-search').value = item.name;
-                activeRow.querySelector('.item-id').value = item.id;
-                activeRow.querySelector('.item-rate').value = parseFloat(item.sale_price).toFixed(2);
-                activeRow.querySelector('.item-tax').value = item.tax_rate || 0;
+                var ok = selectItem(activeRow, item);
                 calcRow(activeRow);
                 calcGrand();
+                if (!ok) {
+                    bootstrap.Modal.getInstance(quickModal).hide();
+                    return;
+                }
             }
             qaResetForm();
             bootstrap.Modal.getInstance(quickModal).hide();
@@ -1238,11 +1319,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             d.className = 'srch-item';
                             d.innerHTML = '<div class="si-name">' + escapeH(item.name) + '</div><div class="si-stock">' + item.current_stock + '</div><div class="si-hsn">' + escapeH(item.hsn_code || '') + '</div><div class="si-price si-purchase">₹' + parseFloat(item.purchase_price).toFixed(2) + '</div><div class="si-price">₹' + parseFloat(item.sale_price).toFixed(2) + '</div>';
                             d.addEventListener('click', function() {
-                                searchInput.value = item.name;
-                                row.querySelector('.item-id').value = item.id;
-                                row.querySelector('.item-rate').value = parseFloat(item.sale_price).toFixed(2);
-                                row.querySelector('.item-tax').value = item.tax_rate || 0;
                                 dropdown.classList.remove('show');
+                                if (!selectItem(row, item)) return;
                                 calcRow(row);
                                 calcGrand();
                             });
@@ -1317,7 +1395,12 @@ document.addEventListener('DOMContentLoaded', function() {
             calcRow(row);
         });
         sub = r2(sub); disc = r2(disc); tax = r2(tax); grand = r2(grand);
-        var paid = parseFloat(document.getElementById('paid_amount').value) || 0;
+        var paidInput = document.getElementById('paid_amount');
+        var isCredit = document.getElementById('saleMode').checked;
+        if (!isCredit) {
+            paidInput.value = grand.toFixed(2);
+        }
+        var paid = parseFloat(paidInput.value) || 0;
         var due = r2(Math.max(0, grand - paid));
 
         document.getElementById('disp_subtotal').textContent = '₹' + sub.toFixed(2);
@@ -1337,8 +1420,46 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target.matches('.item-qty, .item-rate, .item-disc, .item-tax')) {
             var row = e.target.closest('.item-row');
             if (row) { calcRow(row); calcGrand(); }
+            if (e.target.matches('.item-qty') && row && row.querySelector('.item-id').value) {
+                var qty = parseFloat(e.target.value) || 0;
+                var available = stockAvailableFor(row, row.dataset.stock);
+                if (qty > available) {
+                    e.target.value = Math.max(1, Math.floor(available));
+                    showAlertModal('Insufficient Stock', '"' + row.querySelector('.item-search').value + '" only has ' + Math.max(0, Math.floor(available)) + ' unit(s) available.');
+                    calcRow(row);
+                    calcGrand();
+                }
+            }
         }
         if (e.target.id === 'paid_amount') { calcGrand(); }
+    });
+
+    // Form submit validation
+    document.getElementById('saleForm').addEventListener('submit', function(e) {
+        var grand = parseFloat(document.getElementById('hidden_grand').value) || 0;
+        var paid = parseFloat(document.getElementById('paid_amount').value) || 0;
+        var isCredit = document.getElementById('saleMode').checked;
+        if (!isCredit && Math.abs(paid - grand) > 0.009) {
+            e.preventDefault();
+            showAlertModal('Payment Required', 'For cash sales, the amount paid (₹' + paid.toFixed(2) + ') must equal the total amount (₹' + grand.toFixed(2) + ').');
+            return;
+        }
+        var bad = null;
+        document.querySelectorAll('.item-row').forEach(function(row) {
+            if (bad) return;
+            var id = row.querySelector('.item-id').value;
+            if (!id) return;
+            var qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+            var available = stockAvailableFor(row, row.dataset.stock);
+            if (qty > available) {
+                bad = '"' + row.querySelector('.item-search').value + '" (available: ' + Math.max(0, Math.floor(available)) + ', required: ' + qty + ')';
+            }
+        });
+        if (bad) {
+            e.preventDefault();
+            showAlertModal('Insufficient Stock', 'Not enough stock for: ' + bad + '.');
+            return;
+        }
     });
 
     // Add row
