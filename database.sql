@@ -178,7 +178,7 @@ CREATE TABLE `sales` (
   `paid_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `due_amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   `payment_status` ENUM('paid','unpaid','partial') NOT NULL DEFAULT 'unpaid',
-  `payment_method` ENUM('cash','bank','upi','cheque','mixed') DEFAULT NULL,
+  `payment_method` ENUM('cash','bank','upi','cheque','mixed','credit') DEFAULT NULL,
   `notes` TEXT DEFAULT NULL,
   `status` ENUM('draft','sent','paid','cancelled') NOT NULL DEFAULT 'draft',
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

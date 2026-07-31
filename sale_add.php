@@ -11,10 +11,26 @@ $old = [
     'paid_amount' => 0,
     'notes' => '',
     'discount_amount' => 0,
+    'sale_mode' => 'cash',
 ];
+
+// Ensure a "Walk In Customer" party exists and use it as the default party
+$walkIn = fetch("SELECT id, name FROM parties WHERE name = 'Walk In Customer' AND status = 1 ORDER BY id ASC LIMIT 1");
+if (!$walkIn) {
+    $walkInId = insertId("INSERT INTO parties (type, name, status) VALUES ('customer', 'Walk In Customer', 1)");
+    $walkIn = ['id' => $walkInId, 'name' => 'Walk In Customer'];
+}
+if ($old['party_id'] <= 0) {
+    $old['party_id'] = (int) $walkIn['id'];
+}
 
 // Fetch dropdown data
 $customers = fetchAll("SELECT id, name, phone FROM parties WHERE status = 1 AND (type = 'customer' OR type = 'both') ORDER BY name ASC");
+$taxRates = $pdo->query("SELECT id, name, rate FROM tax_rates ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$units = fetchAll("SELECT id, name, short_name FROM units WHERE status = 1 ORDER BY name ASC");
+$categories = $pdo->query("SELECT id, name FROM categories WHERE status = 1 ORDER BY name ASC")->fetchAll(PDO::FETCH_ASSOC);
+$countItems = (int) $pdo->query("SELECT COUNT(*) FROM items")->fetchColumn();
+$suggestedSku = 'ITM-' . str_pad($countItems + 1, 5, '0', STR_PAD_LEFT);
 
 // Handle POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -27,6 +43,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $invoiceNo = sanitize($_POST['invoice_no'] ?? '');
     $partyId = intval($_POST['party_id'] ?? 0);
     $saleDate = sanitize($_POST['date'] ?? today());
+    $saleMode = sanitize($_POST['sale_mode'] ?? 'cash');
+    $old['sale_mode'] = $saleMode;
     $paymentMethod = sanitize($_POST['payment_method'] ?? 'cash');
     $notes = sanitize($_POST['notes'] ?? '');
     $grandTotal = floatval($_POST['grand_total'] ?? 0);
@@ -34,6 +52,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $totalTax = floatval($_POST['total_tax'] ?? 0);
     $subtotal = floatval($_POST['subtotal'] ?? 0);
     $paidAmount = floatval($_POST['paid_amount'] ?? 0);
+    if ($saleMode === 'credit') {
+        $paidAmount = 0;
+        $paymentMethod = 'credit';
+    }
 
     $itemIds = $_POST['item_id'] ?? [];
     $itemQtys = $_POST['item_qty'] ?? [];
@@ -57,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $qty = max(1, intval($itemQtys[$i] ?? 1));
             $rate = floatval($itemRates[$i] ?? 0);
-            $discPct = floatval($itemDiscounts[$i] ?? 0);
+            $discVal = floatval($itemDiscounts[$i] ?? 0);
             $taxPct = floatval($itemTaxes[$i] ?? 0);
 
             $item = fetch("SELECT * FROM items WHERE id = ? AND status = 1", [$itemId]);
@@ -66,11 +88,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 continue;
             }
 
-            $lineSubtotal = $qty * $rate;
-            $lineDiscount = ($lineSubtotal * $discPct) / 100;
-            $afterDiscount = $lineSubtotal - $lineDiscount;
-            $lineTax = ($afterDiscount * $taxPct) / 100;
-            $lineTotal = $afterDiscount + $lineTax;
+            $unitSubtotal = round($rate, 2);
+            $lineSubtotal = round($qty * $unitSubtotal, 2);
+            $unitTax = round(($unitSubtotal * $taxPct) / 100, 2);
+            $taxFull = round($qty * $unitTax, 2);
+            $grossTotal = round($lineSubtotal + $taxFull, 2);
+            $lineDiscount = round(min($discVal, $grossTotal), 2);
+            $lineTotal = round($grossTotal - $lineDiscount, 2);
+            $lineTax = $taxFull;
 
             if ($rate <= 0) {
                 $errors[] = "Rate must be greater than 0 for item: " . $item['name'];
@@ -97,13 +122,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $calcSubtotal = 0;
         $calcTax = 0;
         $calcDiscount = 0;
+        $calcGrand = 0;
         foreach ($validItems as $vi) {
             $calcSubtotal += ($vi['qty'] * $vi['rate']);
             $calcTax += $vi['tax_amount'];
             $calcDiscount += $vi['discount'];
+            $calcGrand += $vi['total'];
         }
-        $calcGrand = $calcSubtotal - $calcDiscount + $calcTax;
-        $dueAmount = max(0, $calcGrand - $paidAmount);
+        $calcSubtotal = round($calcSubtotal, 2);
+        $calcTax = round($calcTax, 2);
+        $calcDiscount = round($calcDiscount, 2);
+        $calcGrand = round($calcGrand, 2);
+        $dueAmount = max(0, round($calcGrand - $paidAmount, 2));
 
         if ($dueAmount <= 0) {
             $paymentStatus = 'paid';
@@ -158,23 +188,52 @@ include 'header.php';
 <style>
 .sale-form .item-search-wrapper { position: relative; }
 .sale-form .item-search-dropdown {
-    position: absolute; top: 100%; left: 0; right: 0; z-index: 1080;
+    position: fixed; z-index: 1050;
     background: #fff; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px;
     box-shadow: 0 6px 20px rgba(0,0,0,0.12); max-height: 220px; overflow-y: auto; display: none;
 }
 .sale-form .item-search-dropdown.show { display: block; }
+.sale-form .item-search-dropdown .dd-head,
 .sale-form .item-search-dropdown .srch-item {
-    padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between;
-    align-items: center; font-size: 13px; border-bottom: 1px solid #f5f5f5;
+    display: grid; grid-template-columns: 1fr 55px 100px 90px 85px; gap: 8px; align-items: center;
+    padding: 4px 8px; font-size: 12px; border-bottom: 1px solid #f5f5f5;
 }
+.sale-form .item-search-dropdown .dd-head {
+    padding-top: 5px; padding-bottom: 5px; font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .4px; color: #6c757d;
+    background: #f8f9fa; border-bottom: 1px solid #dee2e6; position: sticky; top: 0;
+}
+.sale-form .item-search-dropdown .srch-item { cursor: pointer; }
 .sale-form .item-search-dropdown .srch-item:hover { background: #f0f4ff; }
-.sale-form .item-search-dropdown .srch-item .si-name { font-weight: 500; }
-.sale-form .item-search-dropdown .srch-item .si-stock { font-size: 11px; color: #6c757d; }
-.sale-form .item-search-dropdown .srch-item .si-price { color: #2962FF; font-weight: 600; font-size: 13px; }
+.sale-form .item-search-dropdown .srch-item .si-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sale-form .item-search-dropdown .srch-item .si-stock { color: #6c757d; }
+.sale-form .item-search-dropdown .srch-item .si-hsn { color: #6c757d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sale-form .item-search-dropdown .srch-item .si-price { color: #2962FF; font-weight: 600; text-align: right; }
+.sale-form .item-search-dropdown .srch-item .si-price.si-purchase { color: #6c757d; font-weight: 500; }
 .sale-form .item-search-dropdown .no-results { padding: 12px; text-align: center; color: #6c757d; font-size: 13px; }
+.sale-form .item-search-dropdown .qa-link {
+    display: block; padding: 7px 10px; font-size: 12px; font-weight: 600; color: #2962FF;
+    cursor: pointer; background: #f8f9fa; border-top: 1px solid #dee2e6; text-align: center;
+    position: sticky; bottom: 0;
+}
+.sale-form .item-search-dropdown .qa-link:hover { background: #eef2ff; }
 .party-search-wrapper { position: relative; }
+.party-search-wrapper .clear-party-btn {
+    position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
+    width: 22px; height: 22px; border: none; border-radius: 50%;
+    background: #e9ecef; color: #6c757d; font-size: 11px; line-height: 1;
+    display: none; align-items: center; justify-content: center; cursor: pointer; z-index: 3;
+}
+.party-search-wrapper .clear-party-btn:hover { background: #dc3545; color: #fff; }
+.party-search-wrapper .clear-party-btn.show { display: flex; }
+.add-party-link {
+    font-size: inherit; line-height: inherit; color: #6c757d; text-decoration: none;
+    background: none; border: 0; padding: 0; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px;
+}
+.add-party-link:hover { color: var(--primary-color); text-decoration: underline; }
 .party-search-dropdown {
-    position: absolute; top: 100%; left: 0; right: 0; z-index: 1080;
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 999;
     background: #fff; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px;
     box-shadow: 0 6px 20px rgba(0,0,0,0.12); max-height: 220px; overflow-y: auto; display: none;
 }
@@ -183,9 +242,179 @@ include 'header.php';
     padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f5f5f5;
 }
 .party-search-dropdown .srch-item:hover { background: #f0f4ff; }
+.party-search-dropdown .srch-item .p-bal { font-weight: 600; font-size: 13px; white-space: nowrap; }
+.party-search-dropdown .qa-link {
+    display: block; padding: 7px 10px; font-size: 12px; font-weight: 600; color: #2962FF;
+    cursor: pointer; background: #f8f9fa; border-top: 1px solid #dee2e6; text-align: center;
+    position: sticky; bottom: 0;
+}
+.party-search-dropdown .qa-link:hover { background: #eef2ff; }
 .totals-box .total-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
 .totals-box .total-row.grand { border-top: 2px solid #dee2e6; padding-top: 10px; margin-top: 6px; font-size: 20px; font-weight: 700; color: #2962FF; }
 .stock-warn { font-size: 11px; color: #dc3545; margin-top: 2px; display: none; }
+
+/* ===== Quick Add Item modal (mirrors item_add.php) ===== */
+#quickAddModal .modal-dialog { max-width: 900px; }
+#quickAddModal .modal-body { overflow-y: auto; max-height: 80vh; }
+#quickAddModal .vy-add-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start;
+}
+@media (max-width: 767px) { #quickAddModal .vy-add-grid { grid-template-columns: 1fr; } }
+#quickAddModal .vy-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow: hidden; }
+#quickAddModal .vy-add-left .vy-card + .vy-card,
+#quickAddModal .vy-add-right .vy-card + .vy-card { margin-top: 16px; }
+#quickAddModal .vy-card-head {
+    font-size: 12px; font-weight: 700; color: var(--primary-color); text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 12px 18px; background: var(--primary-light);
+    border-bottom: 1px solid rgba(237,26,59,0.08); display: flex; align-items: center; gap: 8px;
+}
+#quickAddModal .vy-card-head i { font-size: 13px; }
+#quickAddModal .vy-card-body { padding: 16px 18px; }
+#quickAddModal .vy-f { margin-bottom: 12px; }
+#quickAddModal .vy-f:last-child { margin-bottom: 0; }
+#quickAddModal .vy-f label {
+    font-size: 11px; font-weight: 600; color: #555; margin-bottom: 4px; display: block;
+    text-transform: uppercase; letter-spacing: 0.3px;
+}
+#quickAddModal .vy-f label .text-danger { color: var(--danger-color); }
+#quickAddModal .vy-f input, #quickAddModal .vy-f select, #quickAddModal .vy-f textarea {
+    width: 100%; height: 38px; border: 1px solid #e0e0e0; border-radius: 8px;
+    padding: 0 11px; font-size: 13px; color: #1a1a1a; background: #fafafa; transition: border 0.2s;
+}
+#quickAddModal .vy-f textarea { height: auto; padding: 9px 11px; resize: vertical; min-height: 56px; }
+#quickAddModal .vy-f input:focus, #quickAddModal .vy-f select:focus, #quickAddModal .vy-f textarea:focus {
+    outline: none; border-color: var(--primary-color); background: #fff;
+    box-shadow: 0 0 0 3px rgba(237, 26, 59, 0.08);
+}
+#quickAddModal .vy-f input::placeholder { color: #bbb; }
+#quickAddModal .vy-f-row { display: flex; gap: 10px; }
+#quickAddModal .vy-f-row .vy-f { flex: 1; }
+#quickAddModal .vy-input-addon { display: flex; align-items: stretch; }
+#quickAddModal .vy-input-addon span {
+    display: flex; align-items: center; justify-content: center; width: 36px;
+    background: #f0f0f0; border: 1px solid #e0e0e0; border-right: none;
+    border-radius: 8px 0 0 8px; font-size: 13px; font-weight: 700; color: #888;
+}
+#quickAddModal .vy-input-addon input { border-radius: 0 8px 8px 0 !important; flex: 1; }
+#quickAddModal .vy-img-upload {
+    position: relative; border: 2px dashed #d5d5d5; border-radius: 10px;
+    background: #fafafa; overflow: hidden; transition: border 0.2s;
+}
+#quickAddModal .vy-img-upload:hover { border-color: var(--primary-color); }
+#quickAddModal .vy-img-placeholder { padding: 22px; text-align: center; cursor: pointer; }
+#quickAddModal .vy-img-placeholder i { font-size: 24px; color: #ccc; margin-bottom: 4px; display: block; }
+#quickAddModal .vy-img-placeholder span { font-size: 12px; color: #888; display: block; }
+#quickAddModal .vy-img-placeholder small { font-size: 11px; color: #bbb; }
+#quickAddModal .vy-img-upload input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+#quickAddModal .vy-img-upload img#qaImagePreview { display: block; max-height: 130px; margin: 10px auto; border-radius: 8px; }
+#quickAddModal .vy-track-toggle {
+    display: flex; align-items: center; justify-content: space-between; padding: 2px 0; margin-bottom: 12px;
+}
+#quickAddModal .vy-toggle-label { font-size: 13px; font-weight: 500; color: #333; }
+#quickAddModal .vy-toggle-desc { font-size: 11px; color: #999; margin-top: 1px; }
+#quickAddModal .vy-switch { position: relative; width: 42px; height: 23px; flex-shrink: 0; }
+#quickAddModal .vy-switch input { opacity: 0; width: 0; height: 0; }
+#quickAddModal .vy-slider {
+    position: absolute; inset: 0; background: #ccc; border-radius: 24px; cursor: pointer; transition: 0.3s;
+}
+#quickAddModal .vy-slider::before {
+    content: ''; position: absolute; height: 17px; width: 17px; left: 3px; bottom: 3px;
+    background: #fff; border-radius: 50%; transition: 0.3s;
+}
+#quickAddModal .vy-switch input:checked + .vy-slider { background: var(--primary-color); }
+#quickAddModal .vy-switch input:checked + .vy-slider::before { transform: translateX(19px); }
+#quickAddModal .vy-sku-row { display: flex; gap: 6px; align-items: center; }
+#quickAddModal .vy-sku-row input { flex: 1; }
+#quickAddModal .vy-btn-icon {
+    height: 38px; min-width: 38px; border: 1px solid #e0e0e0; border-radius: 8px;
+    background: #fafafa; color: var(--primary-color); font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: 0.2s;
+}
+#quickAddModal .vy-btn-icon:hover { background: var(--primary-light); border-color: var(--primary-color); }
+#quickAddModal .vy-profit-box {
+    background: #f8fdf8; border: 1px solid #e6f4e6; border-radius: 10px; padding: 11px 13px;
+}
+#quickAddModal .vy-profit-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: #555; padding: 2px 0;
+}
+#quickAddModal .vy-profit-divider { border-top: 1px dashed #d4e8d4; margin: 5px 0; }
+#quickAddModal .vy-profit-total { font-weight: 700; font-size: 14px; color: #1a1a1a; }
+#quickAddModal .vy-tax-toggle { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+#quickAddModal .vy-tax-label {
+    font-size: 11px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.3px;
+}
+#quickAddModal .vy-tax-pills { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
+#quickAddModal .vy-pill {
+    border: none; background: #fafafa; padding: 4px 13px; font-size: 12px;
+    font-weight: 600; color: #888; cursor: pointer; transition: 0.2s;
+}
+#quickAddModal .vy-pill + .vy-pill { border-left: 1px solid #e0e0e0; }
+#quickAddModal .vy-pill.active { background: var(--primary-color); color: #fff; }
+#quickAddModal .vy-pill:hover:not(.active) { background: #f0f0f0; }
+#quickAddModal .vy-price-breakdown {
+    background: #f8f9fa; border: 1px solid #eee; border-radius: 8px; padding: 9px 11px;
+}
+#quickAddModal .vy-bd-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: #666; padding: 2px 0;
+}
+#quickAddModal .vy-bd-divider { border-top: 1px dashed #ddd; margin: 3px 0; }
+#quickAddModal .vy-bd-total { font-weight: 700; font-size: 13px; color: #1a1a1a; }
+#qaProfitValue.text-success { color: #28a745; }
+
+/* ===== Quick Add Party modal (mirrors party_add.php) ===== */
+#quickAddPartyModal .modal-dialog { max-width: 820px; }
+#quickAddPartyModal .modal-body { overflow-y: auto; max-height: 80vh; }
+#quickAddPartyModal .vy-add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+@media (max-width: 767px) { #quickAddPartyModal .vy-add-grid { grid-template-columns: 1fr; } }
+#quickAddPartyModal .vy-card { background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow: hidden; }
+#quickAddPartyModal .vy-add-left .vy-card + .vy-card,
+#quickAddPartyModal .vy-add-right .vy-card + .vy-card { margin-top: 14px; }
+#quickAddPartyModal .vy-card-head {
+    font-size: 12px; font-weight: 700; color: var(--primary-color); text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 12px 18px; background: var(--primary-light);
+    border-bottom: 1px solid rgba(237,26,59,0.08); display: flex; align-items: center; gap: 8px;
+}
+#quickAddPartyModal .vy-card-head i { font-size: 13px; }
+#quickAddPartyModal .vy-card-body { padding: 16px 18px; }
+#quickAddPartyModal .vy-f { margin-bottom: 12px; }
+#quickAddPartyModal .vy-f:last-child { margin-bottom: 0; }
+#quickAddPartyModal .vy-f label {
+    font-size: 11px; font-weight: 600; color: #555; margin-bottom: 4px; display: block;
+    text-transform: uppercase; letter-spacing: 0.3px;
+}
+#quickAddPartyModal .vy-f label .text-danger { color: var(--danger-color); }
+#quickAddPartyModal .vy-f input, #quickAddPartyModal .vy-f select, #quickAddPartyModal .vy-f textarea {
+    width: 100%; height: 38px; border: 1px solid #e0e0e0; border-radius: 8px;
+    padding: 0 11px; font-size: 13px; color: #1a1a1a; background: #fafafa; transition: border 0.2s;
+}
+#quickAddPartyModal .vy-f textarea { height: auto; padding: 9px 11px; resize: vertical; min-height: 56px; }
+#quickAddPartyModal .vy-f input:focus, #quickAddPartyModal .vy-f select:focus, #quickAddPartyModal .vy-f textarea:focus {
+    outline: none; border-color: var(--primary-color); background: #fff;
+    box-shadow: 0 0 0 3px rgba(237, 26, 59, 0.08);
+}
+#quickAddPartyModal .vy-f input::placeholder { color: #bbb; }
+#quickAddPartyModal .vy-f-row { display: flex; gap: 10px; }
+#quickAddPartyModal .vy-f-row .vy-f { flex: 1; }
+#quickAddPartyModal .vy-input-addon { display: flex; align-items: stretch; }
+#quickAddPartyModal .vy-input-addon span {
+    display: flex; align-items: center; justify-content: center; width: 36px;
+    background: #f0f0f0; border: 1px solid #e0e0e0; border-right: none;
+    border-radius: 8px 0 0 8px; font-size: 13px; font-weight: 700; color: #888;
+}
+#quickAddPartyModal .vy-input-addon input { border-radius: 0 8px 8px 0 !important; flex: 1; }
+#quickAddPartyModal .vy-tax-pills { display: flex; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; }
+#quickAddPartyModal .vy-pill {
+    border: none; background: #fafafa; padding: 4px 13px; font-size: 12px;
+    font-weight: 600; color: #888; cursor: pointer; transition: 0.2s;
+}
+#quickAddPartyModal .vy-pill + .vy-pill { border-left: 1px solid #e0e0e0; }
+#quickAddPartyModal .vy-pill.active { background: var(--primary-color); color: #fff; }
+#quickAddPartyModal .vy-pill:hover:not(.active) { background: #f0f0f0; }
+#quickAddPartyModal .qp-balance-pills .btn { font-size: 12px; }
+#quickAddPartyModal .qp-hint { font-size: 11px; color: #888; }
+#qaProfitValue.text-danger { color: #dc3545; }
 </style>
 
 <?php if (!empty($errors)): ?>
@@ -200,24 +429,30 @@ include 'header.php';
     <input type="hidden" name="grand_total" id="hidden_grand" value="0">
 
     <div class="row g-3 mb-3">
-        <div class="col-md-3">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-body py-2 d-flex align-items-center gap-3">
+                    <span class="fw-semibold" id="modeCashLabel">Cash</span>
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" role="switch" id="saleMode" name="sale_mode" value="credit" <?= $old['sale_mode'] === 'credit' ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="saleMode">&nbsp;</label>
+                    </div>
+                    <span class="fw-semibold" id="modeCreditLabel">Credit</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
             <label class="form-label fw-semibold">Invoice No</label>
             <input type="text" name="invoice_no" class="form-control" value="<?= sanitize($nextInvoice) ?>" readonly>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <label class="form-label fw-semibold">Date</label>
             <input type="date" name="date" class="form-control" value="<?= sanitize($old['date']) ?>" required>
         </div>
-        <div class="col-md-3">
-            <label class="form-label fw-semibold">Payment Method</label>
-            <select name="payment_method" class="form-select">
-                <option value="cash" <?= $old['payment_method'] === 'cash' ? 'selected' : '' ?>>Cash</option>
-                <option value="bank" <?= $old['payment_method'] === 'bank' ? 'selected' : '' ?>>Bank</option>
-                <option value="upi" <?= $old['payment_method'] === 'upi' ? 'selected' : '' ?>>UPI</option>
-                <option value="cheque" <?= $old['payment_method'] === 'cheque' ? 'selected' : '' ?>>Cheque</option>
-            </select>
-        </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <label class="form-label fw-semibold">Party *</label>
             <div class="party-search-wrapper">
                 <?php
@@ -228,13 +463,12 @@ include 'header.php';
                     }
                 }
                 ?>
-                <input type="text" id="party_search" class="form-control" placeholder="Type to search party..." autocomplete="off" value="<?= sanitize($selectedPartyName) ?>">
+                <input type="text" id="party_search" class="form-control" placeholder="Type to search party..." autocomplete="off" value="<?= sanitize($selectedPartyName) ?>" style="padding-right:34px;">
+                <button type="button" class="clear-party-btn" id="clearParty" title="Clear party"><i class="fas fa-times"></i></button>
                 <input type="hidden" name="party_id" id="party_id" value="<?= $old['party_id'] ?>">
                 <div class="party-search-dropdown" id="partyDropdown"></div>
             </div>
-            <small class="text-muted"><a href="party_add.php" target="_blank">+ Add New Party</a></small>
-        </div>
-            <small class="text-muted"><a href="party_add.php" target="_blank">+ Add New Party</a></small>
+            <small class="text-muted"><button type="button" class="add-party-link" id="addPartyLink"><i class="fas fa-plus me-1"></i> Add New Party</button></small>
         </div>
     </div>
 
@@ -249,8 +483,9 @@ include 'header.php';
                             <th style="width:28%">Item</th>
                             <th style="width:8%">Qty</th>
                             <th style="width:12%">Rate</th>
-                            <th style="width:10%">Disc %</th>
+                            <th style="width:10%">Disc ₹</th>
                             <th style="width:10%">Tax %</th>
+                            <th style="width:10%" class="text-end">Tax Amt</th>
                             <th style="width:12%" class="text-end">Total</th>
                             <th style="width:40px"></th>
                         </tr>
@@ -267,8 +502,9 @@ include 'header.php';
                             </td>
                             <td><input type="number" name="item_qty[]" class="form-control form-control-sm item-qty" min="1" value="1"></td>
                             <td><input type="number" name="item_rate[]" class="form-control form-control-sm item-rate" step="0.01" min="0" value="0"></td>
-                            <td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" max="100" value="0"></td>
+                            <td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" value="0"></td>
                             <td><input type="number" name="item_tax[]" class="form-control form-control-sm item-tax" step="0.01" min="0" max="100" value="0"></td>
+                            <td class="text-end fw-bold item-line-tax text-muted">0.00</td>
                             <td class="text-end fw-bold item-line-total">0.00</td>
                             <td><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove"><i class="fas fa-times"></i></button></td>
                         </tr>
@@ -306,6 +542,16 @@ include 'header.php';
                         <span>Due Amount</span>
                         <span id="disp_due" class="text-danger fw-bold">0.00</span>
                     </div>
+                    <div class="mb-2">
+                        <label class="form-label fw-semibold">Payment Method</label>
+                        <select name="payment_method" id="paymentMethod" class="form-select">
+                            <option value="cash" <?= $old['payment_method'] === 'cash' ? 'selected' : '' ?>>Cash</option>
+                            <option value="bank" <?= $old['payment_method'] === 'bank' ? 'selected' : '' ?>>Bank</option>
+                            <option value="upi" <?= $old['payment_method'] === 'upi' ? 'selected' : '' ?>>UPI</option>
+                            <option value="cheque" <?= $old['payment_method'] === 'cheque' ? 'selected' : '' ?>>Cheque</option>
+                            <option value="credit" <?= $old['payment_method'] === 'credit' ? 'selected' : '' ?>>Credit</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
@@ -317,6 +563,422 @@ include 'header.php';
     </div>
 </form>
 
+<!-- Quick Add Item Modal -->
+<div class="modal fade" id="quickAddModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title mb-0"><i class="fas fa-bolt me-1 text-primary"></i> Quick Add Item</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="quickAddForm" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                <div class="modal-body py-3">
+                    <div id="quickAddError" class="alert alert-danger py-2 px-3 mb-2 d-none" style="font-size:13px;"></div>
+                    <div class="vy-add-grid">
+
+                        <!-- LEFT COLUMN -->
+                        <div class="vy-add-left">
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-camera"></i> Item Photo</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-img-upload" id="qaImageUpload">
+                                        <div class="vy-img-placeholder" id="qaImagePlaceholder">
+                                            <i class="fas fa-cloud-arrow-up"></i>
+                                            <span>Tap to add photo</span>
+                                            <small>JPG, PNG or WebP &middot; Max 2MB</small>
+                                        </div>
+                                        <img id="qaImagePreview" class="d-none" alt="Preview">
+                                        <input type="file" name="image" id="qaImageInput" accept="image/*" onchange="qaPreviewImage(this)">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-tag"></i> Basic Info</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-f">
+                                        <label>Item Name <span class="text-danger">*</span></label>
+                                        <input type="text" name="name" required placeholder="e.g. Dell Laptop Inspiron 15" autocomplete="off">
+                                    </div>
+                                    <div class="vy-f-row">
+                                        <div class="vy-f">
+                                            <label>Category</label>
+                                            <select name="category_id">
+                                                <option value="0">-- Select --</option>
+                                                <?php foreach ($categories as $cat): ?>
+                                                    <option value="<?= $cat['id'] ?>"><?= h($cat['name']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <div class="vy-f">
+                                            <label>Unit</label>
+                                            <select name="unit">
+                                                <?php foreach ($units as $u): ?>
+                                                    <option value="<?= h($u['short_name']) ?>" <?= $u['short_name'] === 'Pcs' ? 'selected' : '' ?>><?= h($u['name']) ?> (<?= h($u['short_name']) ?>)</option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="vy-f">
+                                        <label>Description</label>
+                                        <textarea name="description" rows="2" placeholder="Optional description..."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-boxes-stacked"></i> Inventory</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-track-toggle">
+                                        <div>
+                                            <div class="vy-toggle-label">Track Inventory</div>
+                                            <div class="vy-toggle-desc">Enable stock tracking for this item</div>
+                                        </div>
+                                        <label class="vy-switch">
+                                            <input type="checkbox" name="track_stock" checked id="qaTrackStock" onchange="qaToggleStock()">
+                                            <span class="vy-slider"></span>
+                                        </label>
+                                    </div>
+                                    <div id="qaStockFields">
+                                        <div class="vy-f">
+                                            <label>SKU</label>
+                                            <div class="vy-sku-row">
+                                                <input type="text" name="sku" placeholder="<?= h($suggestedSku) ?>" value="<?= h($suggestedSku) ?>">
+                                                <button type="button" class="vy-btn-icon" onclick="qaGenerateSku()" title="Generate SKU"><i class="fas fa-dice"></i></button>
+                                            </div>
+                                        </div>
+                                        <div class="vy-f-row">
+                                            <div class="vy-f">
+                                                <label>Barcode</label>
+                                                <div class="vy-sku-row">
+                                                    <input type="text" name="barcode" placeholder="Enter or scan">
+                                                    <button type="button" class="vy-btn-icon" title="Scan Barcode"><i class="fas fa-barcode"></i></button>
+                                                </div>
+                                            </div>
+                                            <div class="vy-f">
+                                                <label>HSN Code</label>
+                                                <input type="text" name="hsn_code" placeholder="GST HSN">
+                                            </div>
+                                        </div>
+                                        <div class="vy-f-row">
+                                            <div class="vy-f">
+                                                <label>Opening Stock</label>
+                                                <input type="number" name="opening_stock" min="0" value="0">
+                                            </div>
+                                            <div class="vy-f">
+                                                <label>Min Stock Alert</label>
+                                                <input type="number" name="min_stock" min="0" value="10">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN -->
+                        <div class="vy-add-right">
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-cart-shopping"></i> Purchase Price</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-f">
+                                        <label>Purchase Price <span class="text-danger">*</span></label>
+                                        <div class="vy-input-addon">
+                                            <span>₹</span>
+                                            <input type="number" name="purchase_price" id="qaPurchasePrice" step="0.01" min="0" required placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="vy-f">
+                                        <label>Purchase Tax</label>
+                                        <select name="purchase_tax_rate_id" id="qaPurchaseTaxRate">
+                                            <option value="0">No Tax</option>
+                                            <?php foreach ($taxRates as $tr): ?>
+                                                <option value="<?= $tr['id'] ?>" data-rate="<?= $tr['rate'] ?>"><?= h($tr['name']) ?> (<?= number_format($tr['rate'], 1) ?>%)</option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="vy-tax-toggle">
+                                        <span class="vy-tax-label">Tax</span>
+                                        <div class="vy-tax-pills">
+                                            <button type="button" class="vy-pill active" data-target="qaPurchaseTaxMode" data-val="exclusive" onclick="qaSetTaxMode(this)">Excl.</button>
+                                            <button type="button" class="vy-pill" data-target="qaPurchaseTaxMode" data-val="inclusive" onclick="qaSetTaxMode(this)">Incl.</button>
+                                        </div>
+                                        <input type="hidden" name="purchase_tax_mode" id="qaPurchaseTaxMode" value="exclusive">
+                                    </div>
+                                    <div class="vy-price-breakdown" id="qaPurchaseBreakdown">
+                                        <div class="vy-bd-row">
+                                            <span>Base Price</span>
+                                            <span id="qaPpBase">₹0.00</span>
+                                        </div>
+                                        <div class="vy-bd-row">
+                                            <span>Tax Amount</span>
+                                            <span id="qaPpTaxAmt">₹0.00</span>
+                                        </div>
+                                        <div class="vy-bd-divider"></div>
+                                        <div class="vy-bd-row vy-bd-total">
+                                            <span>Total (incl. tax)</span>
+                                            <span id="qaPpTotal">₹0.00</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-tag"></i> Sale Price</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-f">
+                                        <label>Sale Price <span class="text-danger">*</span></label>
+                                        <div class="vy-input-addon">
+                                            <span>₹</span>
+                                            <input type="number" name="sale_price" id="qaSalePrice" step="0.01" min="0" required placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <div class="vy-f">
+                                        <label>Sale Tax</label>
+                                        <select name="tax_rate_id" id="qaSaleTaxRate">
+                                            <option value="0">No Tax</option>
+                                            <?php foreach ($taxRates as $tr): ?>
+                                                <option value="<?= $tr['id'] ?>" data-rate="<?= $tr['rate'] ?>"><?= h($tr['name']) ?> (<?= number_format($tr['rate'], 1) ?>%)</option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="vy-tax-toggle">
+                                        <span class="vy-tax-label">Tax</span>
+                                        <div class="vy-tax-pills">
+                                            <button type="button" class="vy-pill active" data-target="qaSaleTaxMode" data-val="exclusive" onclick="qaSetTaxMode(this)">Excl.</button>
+                                            <button type="button" class="vy-pill" data-target="qaSaleTaxMode" data-val="inclusive" onclick="qaSetTaxMode(this)">Incl.</button>
+                                        </div>
+                                        <input type="hidden" name="sale_tax_mode" id="qaSaleTaxMode" value="exclusive">
+                                    </div>
+                                    <div class="vy-price-breakdown" id="qaSaleBreakdown">
+                                        <div class="vy-bd-row">
+                                            <span>Base Price</span>
+                                            <span id="qaSpBase">₹0.00</span>
+                                        </div>
+                                        <div class="vy-bd-row">
+                                            <span>Tax Amount</span>
+                                            <span id="qaSpTaxAmt">₹0.00</span>
+                                        </div>
+                                        <div class="vy-bd-divider"></div>
+                                        <div class="vy-bd-row vy-bd-total">
+                                            <span>Total (incl. tax)</span>
+                                            <span id="qaSpTotal">₹0.00</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-calculator"></i> Profit Calculator</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-profit-box" id="qaProfitPreview">
+                                        <div class="vy-profit-row">
+                                            <span>Purchase (excl. tax)</span>
+                                            <span id="qaPpVal">₹0.00</span>
+                                        </div>
+                                        <div class="vy-profit-row">
+                                            <span>Sale (excl. tax)</span>
+                                            <span id="qaSpVal">₹0.00</span>
+                                        </div>
+                                        <div class="vy-profit-divider"></div>
+                                        <div class="vy-profit-row vy-profit-total">
+                                            <span>Profit</span>
+                                            <span id="qaProfitValue">₹0.00</span>
+                                        </div>
+                                        <div class="vy-profit-row">
+                                            <span>Margin</span>
+                                            <span id="qaMarginValue">0%</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal"><i class="fas fa-xmark me-1"></i> Cancel</button>
+                    <div class="d-flex align-items-center gap-2 px-3 py-1 rounded" style="background:#f1f3f5;">
+                        <label class="form-check-label fw-semibold" style="font-size:13px;color:#495057;">Active</label>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" name="status" value="1" checked style="cursor:pointer;">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary" id="quickAddSubmit"><i class="fas fa-check me-1"></i> Save Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Add Party Modal -->
+<div class="modal fade" id="quickAddPartyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title mb-0"><i class="fas fa-user-plus me-1 text-primary"></i> Quick Add Party</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="quickAddPartyForm">
+                <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                <div class="modal-body py-3">
+                    <div id="quickAddPartyError" class="alert alert-danger py-2 px-3 mb-2 d-none" style="font-size:13px;"></div>
+                    <div class="vy-add-grid">
+
+                        <!-- LEFT COLUMN -->
+                        <div class="vy-add-left">
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-users"></i> Party Type</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-tax-pills" id="qpTypePills">
+                                        <button type="button" class="vy-pill active" data-val="customer" onclick="qpSetType(this)"><i class="fas fa-user me-1"></i> Customer</button>
+                                        <button type="button" class="vy-pill" data-val="supplier" onclick="qpSetType(this)"><i class="fas fa-truck me-1"></i> Supplier</button>
+                                        <button type="button" class="vy-pill" data-val="both" onclick="qpSetType(this)"><i class="fas fa-arrows-left-right me-1"></i> Both</button>
+                                    </div>
+                                    <input type="hidden" name="type" id="qpTypeInput" value="customer">
+                                </div>
+                            </div>
+
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-id-card"></i> Contact Details</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-f">
+                                        <label>Party Name <span class="text-danger">*</span></label>
+                                        <input type="text" name="name" required placeholder="e.g. Rahul Traders">
+                                    </div>
+                                    <div class="vy-f-row">
+                                        <div class="vy-f">
+                                            <label>Phone</label>
+                                            <input type="text" name="phone" placeholder="9876543210">
+                                        </div>
+                                        <div class="vy-f">
+                                            <label>Email</label>
+                                            <input type="email" name="email" placeholder="rahul@email.com">
+                                        </div>
+                                    </div>
+                                    <div class="vy-f">
+                                        <label>Party Group</label>
+                                        <input type="text" name="party_group" placeholder="e.g. Wholesalers, Retailers">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-location-dot"></i> Address</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-f">
+                                        <label>Address</label>
+                                        <textarea name="address" rows="2" placeholder="Full address..."></textarea>
+                                    </div>
+                                    <div class="vy-f-row">
+                                        <div class="vy-f">
+                                            <label>City</label>
+                                            <input type="text" name="city" placeholder="Mumbai">
+                                        </div>
+                                        <div class="vy-f">
+                                            <label>State</label>
+                                            <input type="text" name="state" placeholder="Maharashtra">
+                                        </div>
+                                    </div>
+                                    <div class="vy-f">
+                                        <label>Pincode</label>
+                                        <input type="text" name="pincode" maxlength="6" placeholder="400001">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN -->
+                        <div class="vy-add-right">
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-file-invoice"></i> Tax & Compliance</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-f">
+                                        <label>GST Registration Type</label>
+                                        <select name="gst_reg_type">
+                                            <option value="">-- Select --</option>
+                                            <?php
+                                            $qpGstTypes = [
+                                                'unregistered' => 'Unregistered / Consumer',
+                                                'regular'      => 'Regular Taxable Person',
+                                                'composition'  => 'Composition Taxable Person',
+                                                'sez_unit'     => 'SEZ Unit',
+                                                'sez_dev'      => 'SEZ Developer',
+                                                'non_resident' => 'Non-Resident Taxable Person',
+                                                'oidar'        => 'Non-Resident Online (OIDAR)',
+                                                'isd'          => 'Input Service Distributor (ISD)',
+                                                'tds'          => 'Tax Deductor',
+                                                'tcs'          => 'Tax Collector (eTCS)',
+                                                'urp'          => 'URP (Unregistered Person)',
+                                            ];
+                                            foreach ($qpGstTypes as $qpVal => $qpLabel):
+                                            ?>
+                                                <option value="<?= $qpVal ?>"><?= $qpLabel ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="vy-f">
+                                        <label>GSTIN</label>
+                                        <input type="text" name="gstin" maxlength="15" placeholder="22AAAAA0000A1Z5" style="text-transform:uppercase;">
+                                    </div>
+                                    <div class="vy-f">
+                                        <label>PAN</label>
+                                        <input type="text" name="pan" maxlength="10" placeholder="AAAAA0000A" style="text-transform:uppercase;">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-indian-rupee-sign"></i> Opening Balance</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-f">
+                                        <label>Amount</label>
+                                        <div class="vy-input-addon">
+                                            <span>&#8377;</span>
+                                            <input type="number" step="0.01" min="0" name="opening_balance" value="0">
+                                        </div>
+                                    </div>
+                                    <div class="vy-f">
+                                        <label>Type</label>
+                                        <div class="d-flex gap-2 qp-balance-pills" id="qpBalancePills">
+                                            <button type="button" class="btn btn-sm rounded-pill fw-semibold btn-success" onclick="qpSetBalance('credit', this)"><i class="fas fa-arrow-down me-1"></i> You'll Receive</button>
+                                            <button type="button" class="btn btn-sm rounded-pill fw-semibold btn-outline-secondary" onclick="qpSetBalance('debit', this)"><i class="fas fa-arrow-up me-1"></i> You'll Pay</button>
+                                        </div>
+                                        <input type="hidden" name="balance_type" id="qpBalanceInput" value="credit">
+                                        <div class="mt-2 qp-hint">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            <span id="qpBalanceHint">Party owes you money (Receivable)</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="vy-card">
+                                <div class="vy-card-head"><i class="fas fa-sticky-note"></i> Notes</div>
+                                <div class="vy-card-body">
+                                    <div class="vy-f">
+                                        <textarea name="notes" rows="3" placeholder="Any additional notes about this party..."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal"><i class="fas fa-xmark me-1"></i> Cancel</button>
+                    <div class="d-flex align-items-center gap-2 px-3 py-1 rounded" style="background:#f1f3f5;">
+                        <label class="form-check-label fw-semibold" style="font-size:13px;color:#495057;">Active</label>
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" name="status" value="active" checked style="cursor:pointer;">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary" id="quickAddPartySubmit"><i class="fas fa-check me-1"></i> Save Party</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var rowIndex = 1;
@@ -325,10 +987,24 @@ document.addEventListener('DOMContentLoaded', function() {
     var partySearch = document.getElementById('party_search');
     var partyIdField = document.getElementById('party_id');
     var partyDropdown = document.getElementById('partyDropdown');
+    var clearPartyBtn = document.getElementById('clearParty');
     var partyTimer;
+
+    function refreshClearParty() {
+        clearPartyBtn.classList.toggle('show', partySearch.value.trim().length > 0);
+    }
+
+    clearPartyBtn.addEventListener('click', function() {
+        partySearch.value = '';
+        partyIdField.value = '';
+        partyDropdown.classList.remove('show');
+        refreshClearParty();
+        partySearch.focus();
+    });
 
     partySearch.addEventListener('input', function() {
         clearTimeout(partyTimer);
+        refreshClearParty();
         var q = this.value.trim();
         if (q.length < 2) { partyDropdown.classList.remove('show'); return; }
         partyTimer = setTimeout(function() {
@@ -336,18 +1012,38 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     partyDropdown.innerHTML = '';
-                    if (data.length === 0) { partyDropdown.innerHTML = '<div class="no-results" style="padding:10px;text-align:center;color:#6c757d;font-size:13px;">No parties found</div>'; partyDropdown.classList.add('show'); return; }
-                    data.forEach(function(p) {
-                        var d = document.createElement('div');
-                        d.className = 'srch-item';
-                        d.innerHTML = '<div><strong>' + escapeH(p.name) + '</strong><br><small class="text-muted">' + escapeH(p.phone || '') + '</small></div>';
-                        d.addEventListener('click', function() {
-                            partySearch.value = p.name;
-                            partyIdField.value = p.id;
-                            partyDropdown.classList.remove('show');
+                    if (data.length === 0) {
+                        var nr = document.createElement('div');
+                        nr.className = 'no-results';
+                        nr.style.cssText = 'padding:10px;text-align:center;color:#6c757d;font-size:13px;';
+                        nr.textContent = 'No parties found';
+                        partyDropdown.appendChild(nr);
+                    } else {
+                        data.forEach(function(p) {
+                            var d = document.createElement('div');
+                            d.className = 'srch-item';
+                            var bal = parseFloat(p.balance) || 0;
+                            var balClass = bal > 0 ? 'text-success' : (bal < 0 ? 'text-danger' : 'text-muted');
+                            var balSign = bal < 0 ? '-' : '';
+                            d.innerHTML = '<div class="d-flex justify-content-between align-items-center gap-2"><div><strong>' + escapeH(p.name) + '</strong><br><small class="text-muted">' + escapeH(p.phone || '') + '</small></div><span class="p-bal ' + balClass + '">Bal: ' + balSign + '₹' + Math.abs(bal).toFixed(2) + '</span></div>';
+                            d.addEventListener('click', function() {
+                                partySearch.value = p.name;
+                                partyIdField.value = p.id;
+                                partyDropdown.classList.remove('show');
+                                refreshClearParty();
+                            });
+                            partyDropdown.appendChild(d);
                         });
-                        partyDropdown.appendChild(d);
+                    }
+                    var qa = document.createElement('div');
+                    qa.className = 'qa-link';
+                    qa.innerHTML = '<i class="fas fa-plus me-1"></i> Quick Add Party';
+                    qa.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        partyDropdown.classList.remove('show');
+                        openQuickAddParty();
                     });
+                    partyDropdown.appendChild(qa);
                     partyDropdown.classList.add('show');
                 });
         }, 300);
@@ -358,26 +1054,189 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!partySearch.parentElement.contains(e.target)) partyDropdown.classList.remove('show');
     });
 
+    // === Quick Add Party ===
+    var quickPartyModal = document.getElementById('quickAddPartyModal');
+    var quickPartyForm = document.getElementById('quickAddPartyForm');
+
+    function openQuickAddParty() {
+        closeDropdowns();
+        quickPartyForm.reset();
+        var errBox = document.getElementById('quickAddPartyError');
+        if (errBox) errBox.classList.add('d-none');
+        var typePills = document.getElementById('qpTypePills');
+        if (typePills) {
+            var custPill = typePills.querySelector('.vy-pill[data-val="customer"]');
+            typePills.querySelectorAll('.vy-pill').forEach(function(p) { p.classList.remove('active'); });
+            if (custPill) custPill.classList.add('active');
+            document.getElementById('qpTypeInput').value = 'customer';
+        }
+        qpSetBalance('credit', document.querySelector('#qpBalancePills .btn'));
+        bootstrap.Modal.getOrCreateInstance(quickPartyModal).show();
+        setTimeout(function() { quickPartyForm.querySelector('input[name="name"]').focus(); }, 350);
+    }
+
+    document.getElementById('addPartyLink').addEventListener('click', openQuickAddParty);
+
+    quickPartyForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var form = this;
+        var errBox = document.getElementById('quickAddPartyError');
+        var btn = document.getElementById('quickAddPartySubmit');
+        errBox.classList.add('d-none');
+        btn.disabled = true;
+
+        fetch('api/party_quick_add.php', {
+            method: 'POST',
+            body: new FormData(form)
+        })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(res) {
+            btn.disabled = false;
+            if (!res.ok || res.data.error) {
+                errBox.textContent = res.data.error || 'Failed to add party.';
+                errBox.classList.remove('d-none');
+                return;
+            }
+            var party = res.data;
+            partySearch.value = party.name;
+            partyIdField.value = party.id;
+            partyDropdown.classList.remove('show');
+            refreshClearParty();
+            bootstrap.Modal.getInstance(quickPartyModal).hide();
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            errBox.textContent = 'Network error: ' + err.message;
+            errBox.classList.remove('d-none');
+        });
+    });
+
+    // === Sale Mode (Cash / Credit) ===
+    var saleMode = document.getElementById('saleMode');
+    var paymentMethodSel = document.getElementById('paymentMethod');
+    var paidAmountInput = document.getElementById('paid_amount');
+    var walkInName = <?= json_encode($walkIn['name']) ?>;
+    var walkInId = <?= (int) $walkIn['id'] ?>;
+    var cashMethods = '<option value="cash" selected>Cash</option>' +
+        '<option value="bank">Bank</option>' +
+        '<option value="upi">UPI</option>' +
+        '<option value="cheque">Cheque</option>';
+
+    function applySaleMode() {
+        if (saleMode.checked) {
+            partySearch.value = '';
+            partyIdField.value = '';
+            paymentMethodSel.innerHTML = '<option value="credit" selected>Credit</option>';
+            paidAmountInput.disabled = true;
+            paidAmountInput.value = 0;
+        } else {
+            partySearch.value = walkInName;
+            partyIdField.value = walkInId;
+            paymentMethodSel.innerHTML = cashMethods;
+            paidAmountInput.disabled = false;
+        }
+        partyDropdown.classList.remove('show');
+        refreshClearParty();
+        calcGrand();
+    }
+
+    saleMode.addEventListener('change', applySaleMode);
+    applySaleMode();
+    refreshClearParty();
+
     // === Item Search ===
+    function positionDropdown(input, dropdown) {
+        var r = input.getBoundingClientRect();
+        var w = Math.max(r.width, Math.min(600, window.innerWidth - r.left - 8));
+        dropdown.style.top = (r.bottom + 2) + 'px';
+        dropdown.style.left = r.left + 'px';
+        dropdown.style.width = w + 'px';
+    }
+
+    function closeDropdowns() {
+        document.querySelectorAll('.sale-form .item-search-dropdown').forEach(function(d) { d.classList.remove('show'); });
+    }
+
+    // === Quick Add Item ===
+    var activeRow = null;
+    var activeOpenFn = null;
+    var quickModal = document.getElementById('quickAddModal');
+
+    function openQuickAdd(row, openFn) {
+        activeRow = row;
+        activeOpenFn = openFn;
+        closeDropdowns();
+        bootstrap.Modal.getOrCreateInstance(quickModal).show();
+    }
+
+    document.getElementById('quickAddForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var form = this;
+        var errBox = document.getElementById('quickAddError');
+        var btn = document.getElementById('quickAddSubmit');
+        errBox.classList.add('d-none');
+        btn.disabled = true;
+
+        fetch('api/item_quick_add.php', {
+            method: 'POST',
+            body: new FormData(form)
+        })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+        .then(function(res) {
+            btn.disabled = false;
+            if (!res.ok || res.data.error) {
+                errBox.textContent = res.data.error || 'Failed to add item.';
+                errBox.classList.remove('d-none');
+                return;
+            }
+            var item = res.data;
+            if (activeRow) {
+                activeRow.querySelector('.item-search').value = item.name;
+                activeRow.querySelector('.item-id').value = item.id;
+                activeRow.querySelector('.item-rate').value = parseFloat(item.sale_price).toFixed(2);
+                activeRow.querySelector('.item-tax').value = item.tax_rate || 0;
+                calcRow(activeRow);
+                calcGrand();
+            }
+            qaResetForm();
+            bootstrap.Modal.getInstance(quickModal).hide();
+        })
+        .catch(function(err) {
+            btn.disabled = false;
+            errBox.textContent = 'Network error: ' + err.message;
+            errBox.classList.remove('d-none');
+        });
+    });
+
+    quickModal.addEventListener('hidden.bs.modal', function() {
+        if (activeOpenFn) { activeOpenFn(); activeOpenFn = null; }
+    });
+
     function initItemSearch(row) {
         var searchInput = row.querySelector('.item-search');
         var dropdown = row.querySelector('.item-search-dropdown');
         var timer;
 
-        searchInput.addEventListener('input', function() {
-            clearTimeout(timer);
-            var q = this.value.trim();
-            if (q.length < 2) { dropdown.classList.remove('show'); return; }
-            timer = setTimeout(function() {
-                fetch('api/items_search.php?q=' + encodeURIComponent(q))
-                    .then(function(r) { return r.json(); })
-                    .then(function(items) {
-                        dropdown.innerHTML = '';
-                        if (items.length === 0) { dropdown.innerHTML = '<div class="no-results">No items found</div>'; dropdown.classList.add('show'); return; }
+        function loadItems(q) {
+            fetch('api/items_search.php?q=' + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(items) {
+                    positionDropdown(searchInput, dropdown);
+                    dropdown.innerHTML = '';
+                    if (items.length === 0) {
+                        var nr = document.createElement('div');
+                        nr.className = 'no-results';
+                        nr.textContent = 'No items found';
+                        dropdown.appendChild(nr);
+                    } else {
+                        var head = document.createElement('div');
+                        head.className = 'dd-head';
+                        head.innerHTML = '<span>Item</span><span>Stock</span><span>HSN</span><span class="si-price">Purchase</span><span class="si-price">Sale</span>';
+                        dropdown.appendChild(head);
                         items.forEach(function(item) {
                             var d = document.createElement('div');
                             d.className = 'srch-item';
-                            d.innerHTML = '<div><div class="si-name">' + escapeH(item.name) + '</div><div class="si-stock">Stock: ' + item.current_stock + '</div></div><div class="si-price">₹' + parseFloat(item.sale_price).toFixed(2) + '</div>';
+                            d.innerHTML = '<div class="si-name">' + escapeH(item.name) + '</div><div class="si-stock">' + item.current_stock + '</div><div class="si-hsn">' + escapeH(item.hsn_code || '') + '</div><div class="si-price si-purchase">₹' + parseFloat(item.purchase_price).toFixed(2) + '</div><div class="si-price">₹' + parseFloat(item.sale_price).toFixed(2) + '</div>';
                             d.addEventListener('click', function() {
                                 searchInput.value = item.name;
                                 row.querySelector('.item-id').value = item.id;
@@ -389,47 +1248,77 @@ document.addEventListener('DOMContentLoaded', function() {
                             });
                             dropdown.appendChild(d);
                         });
-                        dropdown.classList.add('show');
+                    }
+                    var qa = document.createElement('div');
+                    qa.className = 'qa-link';
+                    qa.innerHTML = '<i class="fas fa-plus me-1"></i> Quick Add Item';
+                    qa.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        openQuickAdd(row, open);
                     });
-            }, 300);
+                    dropdown.appendChild(qa);
+                    dropdown.classList.add('show');
+                });
+        }
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(timer);
+            var q = this.value.trim();
+            if (q.length < 2) { dropdown.classList.remove('show'); return; }
+            timer = setTimeout(function() { loadItems(q); }, 300);
         });
 
-        searchInput.addEventListener('focus', function() { if (this.value.trim().length >= 2) dropdown.classList.add('show'); });
-        document.addEventListener('click', function(e) { if (!searchInput.parentElement.contains(e.target)) dropdown.classList.remove('show'); });
+        function open() {
+            clearTimeout(timer);
+            loadItems(searchInput.value.trim());
+        }
+
+        searchInput.addEventListener('focus', open);
+
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('#addRow')) return;
+            if (!searchInput.parentElement.contains(e.target)) dropdown.classList.remove('show');
+        });
+
+        return open;
+    }
+
+    window.addEventListener('scroll', closeDropdowns, true);
+    window.addEventListener('resize', closeDropdowns);
+
+    function r2(v) { return Math.round((v + Number.EPSILON) * 100) / 100; }
+
+    function lineAmounts(row) {
+        var qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+        var rate = parseFloat(row.querySelector('.item-rate').value) || 0;
+        var discVal = parseFloat(row.querySelector('.item-disc').value) || 0;
+        var taxPct = parseFloat(row.querySelector('.item-tax').value) || 0;
+
+        var sub = r2(qty * rate);
+        var tax = r2(qty * r2((rate * taxPct) / 100));
+        var grossTotal = r2(sub + tax);
+        var disc = r2(Math.min(discVal, grossTotal));
+        var total = r2(sub + tax - disc);
+        return { sub: sub, disc: disc, tax: tax, total: total };
     }
 
     function calcRow(row) {
-        var qty = parseFloat(row.querySelector('.item-qty').value) || 0;
-        var rate = parseFloat(row.querySelector('.item-rate').value) || 0;
-        var discPct = parseFloat(row.querySelector('.item-disc').value) || 0;
-        var taxPct = parseFloat(row.querySelector('.item-tax').value) || 0;
-
-        var sub = qty * rate;
-        var disc = (sub * discPct) / 100;
-        var afterDisc = sub - disc;
-        var tax = (afterDisc * taxPct) / 100;
-        var total = afterDisc + tax;
-
-        row.querySelector('.item-line-total').textContent = '₹' + total.toFixed(2);
+        var a = lineAmounts(row);
+        row.querySelector('.item-line-tax').textContent = '₹' + a.tax.toFixed(2);
+        row.querySelector('.item-line-total').textContent = '₹' + a.total.toFixed(2);
     }
 
     function calcGrand() {
         var rows = document.querySelectorAll('.item-row');
-        var sub = 0, disc = 0, tax = 0;
+        var sub = 0, disc = 0, tax = 0, grand = 0;
         rows.forEach(function(row) {
-            var qty = parseFloat(row.querySelector('.item-qty').value) || 0;
-            var rate = parseFloat(row.querySelector('.item-rate').value) || 0;
-            var discPct = parseFloat(row.querySelector('.item-disc').value) || 0;
-            var taxPct = parseFloat(row.querySelector('.item-tax').value) || 0;
-            var lineSub = qty * rate;
-            var lineDisc = (lineSub * discPct) / 100;
-            var lineTax = ((lineSub - lineDisc) * taxPct) / 100;
-            sub += lineSub; disc += lineDisc; tax += lineTax;
+            var a = lineAmounts(row);
+            sub += a.sub; disc += a.disc; tax += a.tax; grand += a.total;
             calcRow(row);
         });
-        var grand = sub - disc + tax;
+        sub = r2(sub); disc = r2(disc); tax = r2(tax); grand = r2(grand);
         var paid = parseFloat(document.getElementById('paid_amount').value) || 0;
-        var due = Math.max(0, grand - paid);
+        var due = r2(Math.max(0, grand - paid));
 
         document.getElementById('disp_subtotal').textContent = '₹' + sub.toFixed(2);
         document.getElementById('disp_discount').textContent = '-₹' + disc.toFixed(2);
@@ -462,14 +1351,14 @@ document.addEventListener('DOMContentLoaded', function() {
             '<td><input type="hidden" name="item_id[]" class="item-id" value=""><div class="item-search-wrapper"><input type="text" class="form-control form-control-sm item-search" placeholder="Type to search..." autocomplete="off"><div class="item-search-dropdown"></div></div></td>' +
             '<td><input type="number" name="item_qty[]" class="form-control form-control-sm item-qty" min="1" value="1"></td>' +
             '<td><input type="number" name="item_rate[]" class="form-control form-control-sm item-rate" step="0.01" min="0" value="0"></td>' +
-            '<td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" max="100" value="0"></td>' +
+            '<td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" value="0"></td>' +
             '<td><input type="number" name="item_tax[]" class="form-control form-control-sm item-tax" step="0.01" min="0" max="100" value="0"></td>' +
+            '<td class="text-end fw-bold item-line-tax text-muted">0.00</td>' +
             '<td class="text-end fw-bold item-line-total">0.00</td>' +
             '<td><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove"><i class="fas fa-times"></i></button></td>';
         container.appendChild(tr);
         initItemSearch(tr);
         rowIndex++;
-        tr.querySelector('.item-search').focus();
     });
 
     // Remove row
@@ -487,9 +1376,161 @@ document.addEventListener('DOMContentLoaded', function() {
     // Init first row
     initItemSearch(document.querySelector('.item-row'));
     calcGrand();
+
+    // === Quick Add Item modal: price / profit live calc ===
+    var quickModalEl = quickModal;
+    document.getElementById('qaPurchasePrice').addEventListener('input', qaCalcProfit);
+    document.getElementById('qaSalePrice').addEventListener('input', qaCalcProfit);
+    document.getElementById('qaPurchaseTaxRate').addEventListener('change', qaCalcProfit);
+    document.getElementById('qaSaleTaxRate').addEventListener('change', qaCalcProfit);
+    quickModalEl.addEventListener('show.bs.modal', function() {
+        qaResetForm();
+        setTimeout(function() { quickModalEl.querySelector('input[name="name"]').focus(); }, 350);
+    });
 });
 
 function escapeH(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+// === Quick Add Item modal helpers (mirrors item_add.php) ===
+function qaPreviewImage(input) {
+    var preview = document.getElementById('qaImagePreview');
+    var placeholder = document.getElementById('qaImagePlaceholder');
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            preview.src = e.target.result;
+            preview.classList.remove('d-none');
+            if (placeholder) placeholder.style.display = 'none';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function qpSetType(btn) {
+    document.getElementById('qpTypeInput').value = btn.dataset.val;
+    document.querySelectorAll('#qpTypePills .vy-pill').forEach(function(p) { p.classList.remove('active'); });
+    btn.classList.add('active');
+}
+
+function qpSetBalance(val, btn) {
+    document.getElementById('qpBalanceInput').value = val;
+    var hint = document.getElementById('qpBalanceHint');
+    var pills = document.querySelectorAll('#qpBalancePills .btn');
+    pills.forEach(function(b) {
+        b.classList.remove('btn-success', 'btn-danger');
+        b.classList.add('btn-outline-secondary');
+    });
+    btn.classList.remove('btn-outline-secondary');
+    if (val === 'credit') {
+        btn.classList.add('btn-success');
+        hint.textContent = 'Party owes you money (Receivable)';
+    } else {
+        btn.classList.add('btn-danger');
+        hint.textContent = 'You owe party money (Payable)';
+    }
+}
+
+function qaGenerateSku() {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    var sku = 'ITM-';
+    for (var i = 0; i < 6; i++) sku += chars.charAt(Math.floor(Math.random() * chars.length));
+    document.querySelector('#quickAddForm input[name="sku"]').value = sku;
+}
+
+function qaToggleStock() {
+    var fields = document.getElementById('qaStockFields');
+    var on = document.getElementById('qaTrackStock').checked;
+    fields.style.display = on ? 'block' : 'none';
+    fields.querySelectorAll('input, select').forEach(function(i) { i.disabled = !on; });
+}
+
+function qaSetTaxMode(btn) {
+    var target = btn.dataset.target;
+    var val = btn.dataset.val;
+    document.getElementById(target).value = val;
+    btn.parentElement.querySelectorAll('.vy-pill').forEach(function(p) { p.classList.remove('active'); });
+    btn.classList.add('active');
+    qaCalcProfit();
+}
+
+function qaGetTaxRate(selectEl) {
+    var opt = selectEl.options[selectEl.selectedIndex];
+    return parseFloat(opt.dataset.rate) || 0;
+}
+
+function qaCalcProfit() {
+    var ppInput = parseFloat(document.getElementById('qaPurchasePrice').value) || 0;
+    var spInput = parseFloat(document.getElementById('qaSalePrice').value) || 0;
+    var ppMode = document.getElementById('qaPurchaseTaxMode').value;
+    var spMode = document.getElementById('qaSaleTaxMode').value;
+    var ppTaxPct = qaGetTaxRate(document.getElementById('qaPurchaseTaxRate'));
+    var spTaxPct = qaGetTaxRate(document.getElementById('qaSaleTaxRate'));
+
+    var ppBase, ppTaxAmt, ppTotal;
+    if (ppMode === 'inclusive') {
+        ppTotal = ppInput;
+        ppBase = ppTaxPct > 0 ? ppInput / (1 + ppTaxPct / 100) : ppInput;
+        ppTaxAmt = ppTotal - ppBase;
+    } else {
+        ppBase = ppInput;
+        ppTaxAmt = ppInput * ppTaxPct / 100;
+        ppTotal = ppBase + ppTaxAmt;
+    }
+
+    var spBase, spTaxAmt, spTotal;
+    if (spMode === 'inclusive') {
+        spTotal = spInput;
+        spBase = spTaxPct > 0 ? spInput / (1 + spTaxPct / 100) : spInput;
+        spTaxAmt = spTotal - spBase;
+    } else {
+        spBase = spInput;
+        spTaxAmt = spInput * spTaxPct / 100;
+        spTotal = spBase + spTaxAmt;
+    }
+
+    var profit = spBase - ppBase;
+    var margin = spBase > 0 ? ((profit / spBase) * 100).toFixed(1) : 0;
+
+    document.getElementById('qaPpBase').textContent = '₹' + ppBase.toFixed(2);
+    document.getElementById('qaPpTaxAmt').textContent = '₹' + ppTaxAmt.toFixed(2);
+    document.getElementById('qaPpTotal').textContent = '₹' + ppTotal.toFixed(2);
+    document.getElementById('qaSpBase').textContent = '₹' + spBase.toFixed(2);
+    document.getElementById('qaSpTaxAmt').textContent = '₹' + spTaxAmt.toFixed(2);
+    document.getElementById('qaSpTotal').textContent = '₹' + spTotal.toFixed(2);
+    document.getElementById('qaPpVal').textContent = '₹' + ppBase.toFixed(2);
+    document.getElementById('qaSpVal').textContent = '₹' + spBase.toFixed(2);
+    var pv = document.getElementById('qaProfitValue');
+    pv.textContent = '₹' + profit.toFixed(2);
+    pv.className = profit >= 0 ? 'text-success' : 'text-danger';
+    var mv = document.getElementById('qaMarginValue');
+    mv.textContent = margin + '%';
+    mv.className = profit >= 0 ? 'text-success fw-semibold' : 'text-danger fw-semibold';
+}
+
+function qaResetForm() {
+    var form = document.getElementById('quickAddForm');
+    form.reset();
+    var qa = document.getElementById('quickAddForm');
+    var prev = qa.querySelector('input[name="sku"]');
+    prev.value = prev.placeholder;
+    qa.querySelector('input[name="opening_stock"]').value = 0;
+    qa.querySelector('input[name="min_stock"]').value = 10;
+    qa.querySelector('select[name="tax_rate_id"]').value = 0;
+    qa.querySelector('select[name="purchase_tax_rate_id"]').value = 0;
+    document.getElementById('qaPurchaseTaxMode').value = 'exclusive';
+    document.getElementById('qaSaleTaxMode').value = 'exclusive';
+    qa.querySelectorAll('.vy-pill').forEach(function(p) { p.classList.remove('active'); });
+    qa.querySelectorAll('.vy-pill[data-val="exclusive"]').forEach(function(p) { p.classList.add('active'); });
+    var preview = document.getElementById('qaImagePreview');
+    preview.classList.add('d-none');
+    preview.removeAttribute('src');
+    document.getElementById('qaImagePlaceholder').style.display = '';
+    document.getElementById('qaTrackStock').checked = true;
+    document.getElementById('qaStockFields').style.display = 'block';
+    document.getElementById('qaStockFields').querySelectorAll('input, select').forEach(function(i) { i.disabled = false; });
+    document.getElementById('quickAddError').classList.add('d-none');
+    qaCalcProfit();
+}
 </script>
 
 <?php include 'footer.php'; ?>

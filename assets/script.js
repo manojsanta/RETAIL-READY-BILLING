@@ -252,6 +252,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function initItemSearch(scope) {
         const searchInputs = (scope || document).querySelectorAll('.item-search');
         searchInputs.forEach(function (input) {
+            if (!input.closest('.invoice-item-row')) return;
             let debounceTimer;
             let dropdown = input.parentElement.querySelector('.item-search-dropdown');
             if (!dropdown) {
@@ -310,7 +311,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     div.innerHTML =
                         '<div>' +
                         '<div class="item-name">' + escapeHtml(item.name) + '</div>' +
-                        '<div class="item-stock">Stock: ' + item.current_stock + '</div>' +
+                        '<div class="item-stock">Stock: ' + item.stock + '</div>' +
                         '</div>' +
                         '<div class="item-price">' + formatCurrency(parseFloat(item.sale_price)) + '</div>';
 
@@ -345,8 +346,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (nameField) nameField.value = item.name;
         if (idField) idField.value = item.id;
         if (rateField) rateField.value = parseFloat(item.sale_price).toFixed(2);
-        if (taxField) taxField.value = item.tax_rate || 0;
-        if (stockField) stockField.value = item.current_stock || 0;
+        if (taxField) taxField.value = item.tax || 0;
+        if (stockField) stockField.value = item.stock || 0;
         if (unitField) unitField.value = item.unit || 'pcs';
         if (qtyField && !qtyField.value) qtyField.value = 1;
 
