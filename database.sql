@@ -384,7 +384,7 @@ CREATE TABLE `payments_in` (
   `sale_id` INT UNSIGNED DEFAULT NULL,
   `date` DATE NOT NULL,
   `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-  `payment_method` ENUM('cash','bank','upi','cheque') NOT NULL DEFAULT 'cash',
+  `payment_method` ENUM('cash','bank','upi','cheque','credit') NOT NULL DEFAULT 'cash',
   `reference_no` VARCHAR(100) DEFAULT NULL,
   `notes` TEXT DEFAULT NULL,
   `user_id` INT UNSIGNED NOT NULL,

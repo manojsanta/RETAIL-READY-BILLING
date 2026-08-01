@@ -147,14 +147,42 @@ function today() {
 // =============================================
 // INVOICE / BILL NUMBER GENERATORS
 // =============================================
-function generateInvoiceNo($prefix = 'INV') {
-    $last = fetch("SELECT invoice_no FROM sales ORDER BY id DESC LIMIT 1");
-    if ($last && !empty($last['invoice_no'])) {
-        $num = intval(substr($last['invoice_no'], strlen($prefix) + 1)) + 1;
+function companyShortCode($name = '') {
+    $clean = trim((string) $name);
+    $words = preg_split('/\s+/', preg_replace('/[^A-Za-z0-9 ]/', ' ', $clean), -1, PREG_SPLIT_NO_EMPTY);
+    if (empty($words)) return 'CMP';
+    if (count($words) === 1) return strtoupper(substr($words[0], 0, 3));
+    $code = '';
+    foreach ($words as $w) {
+        if (strlen($code) >= 4) break;
+        $code .= strtoupper(substr($w, 0, 1));
+    }
+    return $code;
+}
+
+function financialYearShort($fy = null) {
+    if (is_null($fy)) $fy = currentFY();
+    $start = substr((string) ($fy['start'] ?? ''), 0, 4);
+    $end = substr((string) ($fy['end'] ?? ''), 0, 4);
+    if ($start === '' || $end === '') return 'FY';
+    return substr($start, 2) . '-' . substr($end, 2);
+}
+
+function generateInvoiceNo($prefix = null) {
+    if ($prefix === null) {
+        $prefix = rtrim((string) getSetting('invoice_prefix', 'INV-'), '-');
+    }
+    $prefix = rtrim((string) $prefix, '-');
+    $companyShort = companyShortCode(getCompany()['name'] ?? '');
+    $fyShort = financialYearShort();
+    $basePrefix = $prefix . '-' . $companyShort . '-' . $fyShort . '/';
+    $last = fetch("SELECT invoice_no FROM sales WHERE invoice_no LIKE ? ORDER BY id DESC LIMIT 1", [$basePrefix . '%']);
+    if ($last && preg_match('/(\d+)\s*$/', $last['invoice_no'], $m)) {
+        $num = intval($m[1]) + 1;
     } else {
         $num = 1;
     }
-    return $prefix . '-' . str_pad($num, 5, '0', STR_PAD_LEFT);
+    return $basePrefix . str_pad($num, 5, '0', STR_PAD_LEFT);
 }
 
 function generateBillNo($prefix = 'PUR') {

@@ -112,8 +112,8 @@ foreach ($returnRows as $rr) {
         'type' => 'sale_return',
         'party' => $rr['party_name'] ?: '-',
         'description' => 'Sale Return ' . $rr['return_no'],
-        'debit' => 0,
-        'credit' => -(float) $rr['total'],
+        'debit' => (float) $rr['total'],
+        'credit' => 0,
         'method' => '-',
     ];
 }
@@ -129,8 +129,8 @@ foreach ($purchaseReturnRows as $prr) {
         'type' => 'purchase_return',
         'party' => $prr['party_name'] ?: '-',
         'description' => 'Purchase Return ' . $prr['return_no'],
-        'debit' => -(float) $prr['total'],
-        'credit' => 0,
+        'debit' => 0,
+        'credit' => (float) $prr['total'],
         'method' => '-',
     ];
 }
@@ -175,7 +175,10 @@ include 'header.php';
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0">Day Book</h5>
-    <button onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="fas fa-print me-1"></i>Print</button>
+    <div class="d-flex gap-2">
+        <a href="pdf_daybook.php?date=<?= urlencode($selectedDate) ?>" target="_blank" class="btn btn-danger btn-sm"><i class="fas fa-file-pdf me-1"></i>Export PDF</a>
+        <button onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="fas fa-print me-1"></i>Print</button>
+    </div>
 </div>
 
 <!-- Date Navigation -->
@@ -272,16 +275,16 @@ include 'header.php';
                             <td><?= sanitize($t['description']) ?></td>
                             <td><small class="text-muted"><?= ucfirst(sanitize($t['method'])) ?></small></td>
                             <td class="text-end text-danger fw-bold"><?= $t['debit'] > 0 ? money($t['debit']) : '-' ?></td>
-                            <td class="text-end text-success fw-bold"><?= $t['credit'] > 0 ? money($t['credit']) : ($t['credit'] < 0 ? '<span class="text-danger">' . money(abs($t['credit'])) . ' (Dr)</span>' : '-') ?></td>
+                            <td class="text-end text-success fw-bold"><?= $t['credit'] > 0 ? money($t['credit']) : '-' ?></td>
                             <td class="text-end fw-bold <?= $t['running_balance'] >= 0 ? 'running-balance-positive' : 'running-balance-negative' ?>"><?= money($t['running_balance']) ?></td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
 
                 <!-- Closing Balance Row -->
-                <tr class="table-dark text-white fw-bold">
-                    <td colspan="7" class="text-end">Closing Balance</td>
-                    <td class="text-end"><?= money($closingBalance) ?></td>
+                <tr class="table-dark fw-bold">
+                    <td colspan="7" class="text-end text-white">Closing Balance</td>
+                    <td class="text-end text-white"><?= money($closingBalance) ?></td>
                 </tr>
             </tbody>
         </table>

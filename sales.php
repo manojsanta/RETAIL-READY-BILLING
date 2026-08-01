@@ -177,8 +177,8 @@ include 'header.php';
 </div>
 
 <div class="card">
-    <div class="table-responsive">
-        <table class="table table-hover mb-0">
+    <div class="table-responsive" id="salesTableWrapper">
+        <table class="table table-sm table-hover mb-0" id="salesTable">
             <thead class="table-light">
                 <tr>
                     <th>#</th>
@@ -223,15 +223,25 @@ include 'header.php';
                                 <?php endif; ?>
                             </td>
                             <td class="text-center">
-                                <div class="btn-group btn-group-sm">
-                                    <a href="sale_view.php?id=<?= $inv['id'] ?>" class="btn btn-outline-info" title="View"><i class="fas fa-eye"></i></a>
-                                    <button type="button" class="btn btn-outline-secondary" title="Print" onclick="window.open('sale_view.php?id=<?= $inv['id'] ?>&print=1','_blank','width=800,height=600')"><i class="fas fa-print"></i></button>
-                                    <form method="POST" class="d-inline" onsubmit="return confirm('Delete this invoice? Stock will be restored.');">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="sale_id" value="<?= $inv['id'] ?>">
-                                        <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
-                                        <button type="submit" class="btn btn-outline-danger btn-sm" title="Delete"><i class="fas fa-trash"></i></button>
-                                    </form>
+                                <div class="dropdown">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="Actions">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow-sm action-menu" data-bs-popper-config='{"placement":"bottom-end","modifiers":[{"name":"flip","enabled":false},{"name":"preventOverflow","options":{"boundary":"viewport"}}]}'>
+                                        <li><a class="dropdown-item" href="sale_view.php?id=<?= $inv['id'] ?>"><i class="fas fa-eye me-2 text-info"></i> View</a></li>
+                                        <li><a class="dropdown-item" href="sale_edit.php?id=<?= $inv['id'] ?>"><i class="fas fa-pencil-alt me-2 text-warning"></i> Edit</a></li>
+                                        <li><a class="dropdown-item" href="pdf_sale.php?id=<?= $inv['id'] ?>" target="_blank"><i class="fas fa-file-pdf me-2 text-danger"></i> PDF Invoice</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="window.open('sale_view.php?id=<?= $inv['id'] ?>&print=1','_blank','width=800,height=600');return false;"><i class="fas fa-print me-2 text-secondary"></i> Print</a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <form method="POST" onsubmit="return confirm('Delete this invoice? Stock will be restored.');">
+                                                <input type="hidden" name="action" value="delete">
+                                                <input type="hidden" name="sale_id" value="<?= $inv['id'] ?>">
+                                                <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                                                <button type="submit" class="dropdown-item text-danger"><i class="fas fa-trash me-2"></i> Delete</button>
+                                            </form>
+                                        </li>
+                                    </ul>
                                 </div>
                             </td>
                         </tr>
@@ -250,5 +260,30 @@ include 'header.php';
         ?>
     </nav>
 <?php endif; ?>
+
+<script>
+(function() {
+    var wrapper = document.getElementById('salesTableWrapper');
+    if (!wrapper) return;
+    document.querySelectorAll('#salesTable .dropdown').forEach(function(dd) {
+        dd.addEventListener('show.bs.dropdown', function() {
+            wrapper.style.overflow = 'visible';
+        });
+        dd.addEventListener('hidden.bs.dropdown', function() {
+            wrapper.style.overflow = '';
+        });
+    });
+})();
+</script>
+
+<style>
+.action-menu { padding: 4px; min-width: 150px; font-size: 12px; }
+.action-menu .dropdown-item { padding: 5px 10px; font-size: 12px; gap: 0; }
+.action-menu .dropdown-item i { font-size: 13px; width: 15px; }
+.action-menu .dropdown-divider { margin: 3px 0; }
+#salesTable { font-size: 13px; }
+#salesTable th, #salesTable td { padding: 5px 8px; vertical-align: middle; white-space: nowrap; }
+#salesTable thead th { padding: 6px 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; }
+</style>
 
 <?php include 'footer.php'; ?>

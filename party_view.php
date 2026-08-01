@@ -21,6 +21,11 @@ $totalPaymentsIn = (float)(fetch("SELECT COALESCE(SUM(amount),0) as t FROM payme
 $totalPaymentsOut = (float)(fetch("SELECT COALESCE(SUM(amount),0) as t FROM payments_out WHERE party_id = ?", [$party['id']])['t'] ?? 0);
 $openingBalance = (float)($party['opening_balance'] ?? 0);
 
+$salesDueVal = (float)(fetch("SELECT COALESCE(SUM(due_amount),0) as t FROM sales WHERE party_id = ? AND status != 'cancelled'", [$party['id']])['t'] ?? 0);
+$purchasesDueVal = (float)(fetch("SELECT COALESCE(SUM(due_amount),0) as t FROM purchases WHERE party_id = ? AND status != 'cancelled'", [$party['id']])['t'] ?? 0);
+$receivable = round(max(0, $openingBalance) + $salesDueVal, 2);
+$payable = round(max(0, -$openingBalance) + $purchasesDueVal, 2);
+
 $transactions = fetchAll("
     SELECT 'sale' as source, id, date, invoice_no as ref_no, subtotal, tax_amount, total, paid_amount, due_amount, status, NULL as pay_type, NULL as pay_method, NULL as pay_amount
     FROM sales WHERE party_id = ? AND status != 'cancelled'
@@ -160,7 +165,7 @@ include 'header.php';
                 <small class="text-muted">Current Balance</small>
                 <div class="fw-bold fs-5 <?php echo $balance >= 0 ? 'text-success' : 'text-danger'; ?>">
                     <?php echo money(abs($balance)); ?>
-                    <small>(<?php echo $balance >= 0 ? 'Receivable' : 'Payable'; ?>)</small>
+                    <small>(<?php echo $balance >= 0 ? 'You\'ll Receive' : 'You\'ll Pay'; ?>)</small>
                 </div>
             </div>
         </div>
@@ -168,6 +173,22 @@ include 'header.php';
 </div>
 
 <div class="row g-2 mb-4">
+    <div class="col-md-3">
+        <div class="card border-0 bg-light">
+            <div class="card-body text-center py-2">
+                <small class="text-muted"><i class="fas fa-arrow-down me-1 text-success"></i>You'll Receive (Receivable)</small>
+                <div class="fw-bold text-success"><?php echo money($receivable); ?></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card border-0 bg-light">
+            <div class="card-body text-center py-2">
+                <small class="text-muted"><i class="fas fa-arrow-up me-1 text-danger"></i>You'll Pay (Payable)</small>
+                <div class="fw-bold text-danger"><?php echo money($payable); ?></div>
+            </div>
+        </div>
+    </div>
     <div class="col-md-3">
         <div class="card border-0 bg-light">
             <div class="card-body text-center py-2">
@@ -181,14 +202,6 @@ include 'header.php';
             <div class="card-body text-center py-2">
                 <small class="text-muted">Payments Made</small>
                 <div class="fw-bold text-danger"><?php echo money($totalPaymentsOut); ?></div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card border-0 bg-light">
-            <div class="card-body text-center py-2">
-                <small class="text-muted">Total Dues</small>
-                <div class="fw-bold text-danger"><?php echo count($outstanding); ?> invoices</div>
             </div>
         </div>
     </div>

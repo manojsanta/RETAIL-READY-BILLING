@@ -209,8 +209,8 @@ include 'header.php';
 ?>
 
 <?php if ($mode === 'add'): ?>
-<div class="row justify-content-center">
-    <div class="col-lg-10">
+<div class="row">
+    <div class="col-12">
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0"><i class="fas fa-undo me-1"></i> Create Sale Return / Credit Note</h5>

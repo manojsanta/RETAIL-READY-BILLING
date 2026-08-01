@@ -81,7 +81,7 @@ unset($item);
 $categorySummary = fetchAll("SELECT c.name as category_name,
     COUNT(i.id) as item_count,
     SUM(i.current_stock) as total_stock,
-    SUM(i.current_stock * i.purchase_value) as total_value
+    SUM(i.current_stock * i.purchase_price) as total_value
     FROM items i LEFT JOIN categories c ON i.category_id = c.id
     WHERE i.status = 1
     GROUP BY i.category_id, c.name
@@ -97,6 +97,9 @@ include 'header.php';
 <style>
 .report-quick-btns .btn { font-size: 0.8rem; padding: 0.25rem 0.6rem; }
 .low-stock-row { background-color: #fff5f5 !important; }
+.table-compact th,
+.table-compact td { padding: 0.2rem 0.35rem; font-size: 0.8rem; white-space: nowrap; }
+.table-compact .badge { font-size: 0.7rem; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -176,7 +179,7 @@ include 'header.php';
 <!-- Stock Table -->
 <div class="card mb-4">
     <div class="table-responsive">
-        <table class="table table-hover mb-0">
+        <table class="table table-sm table-compact table-hover mb-0">
             <thead class="table-light">
                 <tr>
                     <th>#</th>
@@ -240,7 +243,7 @@ include 'header.php';
 <div class="card mb-4">
     <div class="card-header"><h6 class="mb-0">Category-wise Stock Summary</h6></div>
     <div class="table-responsive">
-        <table class="table table-sm mb-0">
+        <table class="table table-sm table-compact mb-0">
             <thead class="table-light">
                 <tr>
                     <th>Category</th>

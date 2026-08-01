@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <a href="payment_in.php?sale_id=<?= $sale['id'] ?>&party_id=<?= $sale['party_id'] ?>" class="btn btn-success btn-sm"><i class="fas fa-money-bill me-1"></i> Add Payment</a>
         <?php endif; ?>
         <button type="button" class="btn btn-info btn-sm" onclick="window.print()"><i class="fas fa-print me-1"></i> Print</button>
-        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.location.href='sale_view.php?id=<?= $sale['id'] ?>&print=1'"><i class="fas fa-file-pdf me-1"></i> PDF</button>
+        <a href="pdf_sale.php?id=<?= $sale['id'] ?>" target="_blank" class="btn btn-outline-secondary btn-sm"><i class="fas fa-file-pdf me-1"></i> PDF</a>
         <a href="sales.php" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left me-1"></i> Back</a>
     </div>
 </div>

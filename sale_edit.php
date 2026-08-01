@@ -3,25 +3,37 @@ require_once 'db.php';
 require_once 'functions.php';
 requireLogin();
 
+$saleId = intval($_GET['id'] ?? 0);
+if ($saleId <= 0) {
+    setFlash('danger', 'Invalid sale ID.');
+    redirect('sales.php');
+}
+
+$sale = fetch("SELECT * FROM sales WHERE id = ? AND status != 'cancelled'", [$saleId]);
+if (!$sale) {
+    setFlash('danger', 'Sale invoice not found.');
+    redirect('sales.php');
+}
+
 $errors = [];
 $old = [
-    'party_id' => intval($_GET['party_id'] ?? 0),
-    'date' => today(),
-    'payment_method' => 'cash',
-    'paid_amount' => 0,
-    'notes' => '',
-    'discount_amount' => 0,
-    'sale_mode' => 'cash',
+    'party_id' => (int) $sale['party_id'],
+    'date' => $sale['date'],
+    'payment_method' => $sale['payment_method'],
+    'paid_amount' => (float) $sale['paid_amount'],
+    'notes' => $sale['notes'] ?? '',
+    'discount_amount' => (float) $sale['discount_amount'],
+    'sale_mode' => $sale['payment_method'] === 'credit' ? 'credit' : 'cash',
 ];
 
-// Ensure a "Walk In Customer" party exists and use it as the default party
+$existingItems = fetchAll("SELECT si.item_id, si.qty, si.rate, si.discount, si.tax_rate, i.name AS item_name, i.sku AS item_sku, i.current_stock AS item_stock
+    FROM sale_items si JOIN items i ON si.item_id = i.id WHERE si.sale_id = ?", [$saleId]);
+
+// Ensure a "Walk In Customer" party exists
 $walkIn = fetch("SELECT id, name FROM parties WHERE name = 'Walk In Customer' AND status = 1 ORDER BY id ASC LIMIT 1");
 if (!$walkIn) {
     $walkInId = insertId("INSERT INTO parties (type, name, status) VALUES ('customer', 'Walk In Customer', 1)");
     $walkIn = ['id' => $walkInId, 'name' => 'Walk In Customer'];
-}
-if ($old['party_id'] <= 0) {
-    $old['party_id'] = (int) $walkIn['id'];
 }
 
 // Fetch dropdown data
@@ -32,25 +44,20 @@ $categories = $pdo->query("SELECT id, name FROM categories WHERE status = 1 ORDE
 $countItems = (int) $pdo->query("SELECT COUNT(*) FROM items")->fetchColumn();
 $suggestedSku = 'ITM-' . str_pad($countItems + 1, 5, '0', STR_PAD_LEFT);
 
-// Handle POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Handle POST (update)
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if (!verifyCsrf($_POST['csrf_token'] ?? '')) {
         setFlash('danger', 'Invalid request.');
-        header('Location: sale_add.php');
+        header('Location: sale_edit.php?id=' . $saleId);
         exit;
     }
 
-    $invoiceNo = sanitize($_POST['invoice_no'] ?? '');
     $partyId = intval($_POST['party_id'] ?? 0);
     $saleDate = sanitize($_POST['date'] ?? today());
     $saleMode = sanitize($_POST['sale_mode'] ?? 'cash');
     $old['sale_mode'] = $saleMode;
     $paymentMethod = sanitize($_POST['payment_method'] ?? 'cash');
     $notes = sanitize($_POST['notes'] ?? '');
-    $grandTotal = floatval($_POST['grand_total'] ?? 0);
-    $totalDiscount = floatval($_POST['total_discount'] ?? 0);
-    $totalTax = floatval($_POST['total_tax'] ?? 0);
-    $subtotal = floatval($_POST['subtotal'] ?? 0);
     $paidAmount = floatval($_POST['paid_amount'] ?? 0);
     if ($saleMode === 'credit') {
         $paymentMethod = 'credit';
@@ -116,15 +123,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        // Check stock availability (accounting for duplicate items across rows)
+        // Check stock availability (old stock will be restored first)
         $itemQtyMap = [];
         foreach ($validItems as $vi) {
             $itemQtyMap[$vi['item_id']] = ($itemQtyMap[$vi['item_id']] ?? 0) + $vi['qty'];
         }
+        $oldQtyMap = [];
+        foreach ($existingItems as $ei) {
+            $oldQtyMap[$ei['item_id']] = ($oldQtyMap[$ei['item_id']] ?? 0) + $ei['qty'];
+        }
         foreach ($itemQtyMap as $iid => $qtySum) {
             $stockRow = fetch("SELECT name, current_stock FROM items WHERE id = ?", [$iid]);
-            if ($stockRow && (int) $stockRow['current_stock'] < $qtySum) {
-                $errors[] = "Insufficient stock for '{$stockRow['name']}' (available: {$stockRow['current_stock']}, required: $qtySum).";
+            $available = (int) ($stockRow['current_stock'] ?? 0) + (int) ($oldQtyMap[$iid] ?? 0);
+            if ($stockRow && $available < $qtySum) {
+                $errors[] = "Insufficient stock for '{$stockRow['name']}' (available: $available, required: $qtySum).";
             }
         }
     }
@@ -165,11 +177,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             global $pdo;
             $pdo->beginTransaction();
             try {
-                $saleId = insertId(
-                    "INSERT INTO sales (invoice_no, party_id, user_id, date, subtotal, tax_amount, discount_amount, total, paid_amount, due_amount, payment_status, payment_method, notes, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                    [$invoiceNo, $partyId ?: null, $_SESSION['user_id'], $saleDate, $calcSubtotal, $calcTax, $calcDiscount, $calcGrand, $paidAmount, $dueAmount, $paymentStatus, $paymentMethod, $notes, $paymentStatus === 'paid' ? 'paid' : 'draft']
-                );
+                // Reverse old stock
+                foreach ($existingItems as $ei) {
+                    updateStock($ei['item_id'], $ei['qty'], 'add');
+                }
 
+                // Delete old items
+                query("DELETE FROM sale_items WHERE sale_id = ?", [$saleId]);
+
+                // Update sale
+                query("UPDATE sales SET party_id = ?, date = ?, subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, paid_amount = ?, due_amount = ?, payment_status = ?, payment_method = ?, notes = ?, status = ? WHERE id = ?",
+                    [$partyId ?: null, $saleDate, $calcSubtotal, $calcTax, $calcDiscount, $calcGrand, $paidAmount, $dueAmount, $paymentStatus, $paymentMethod, $notes, $paymentStatus === 'paid' ? 'paid' : 'draft', $saleId]);
+
+                // Insert new items & subtract stock
                 foreach ($validItems as $vi) {
                     query(
                         "INSERT INTO sale_items (sale_id, item_id, qty, rate, discount, tax_rate, tax_amount, total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
@@ -178,30 +198,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     updateStock($vi['item_id'], $vi['qty'], 'subtract');
                 }
 
+                // Update/create the auto payment entry
+                $autoPayment = fetch("SELECT id FROM payments_in WHERE sale_id = ? AND notes LIKE 'Auto: Sale%' ORDER BY id DESC LIMIT 1", [$saleId]);
                 if ($paidAmount > 0) {
-                    $receiptNo = generateReceiptNo();
-                    query(
-                        "INSERT INTO payments_in (receipt_no, party_id, sale_id, date, amount, payment_method, notes, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
-                        [$receiptNo, $partyId, $saleId, $saleDate, $paidAmount, $paymentMethod, 'Auto: Sale ' . $invoiceNo, $_SESSION['user_id']]
-                    );
+                    if ($autoPayment) {
+                        query("UPDATE payments_in SET party_id = ?, date = ?, amount = ?, payment_method = ? WHERE id = ?",
+                            [$partyId, $saleDate, $paidAmount, $paymentMethod, $autoPayment['id']]);
+                    } else {
+                        $receiptNo = generateReceiptNo();
+                        query(
+                            "INSERT INTO payments_in (receipt_no, party_id, sale_id, date, amount, payment_method, notes, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())",
+                            [$receiptNo, $partyId, $saleId, $saleDate, $paidAmount, $paymentMethod, 'Auto: Sale ' . $sale['invoice_no'], $_SESSION['user_id']]
+                        );
+                    }
+                } elseif ($autoPayment) {
+                    query("DELETE FROM payments_in WHERE id = ?", [$autoPayment['id']]);
                 }
 
                 $pdo->commit();
-                setFlash('success', 'Sale invoice created successfully.');
+                setFlash('success', 'Sale invoice updated successfully.');
                 header('Location: sale_view.php?id=' . $saleId);
                 exit;
             } catch (Exception $e) {
                 $pdo->rollBack();
-                setFlash('danger', 'Error creating sale: ' . $e->getMessage());
-                header('Location: sale_add.php');
+                setFlash('danger', 'Error updating sale: ' . $e->getMessage());
+                header('Location: sale_edit.php?id=' . $saleId);
                 exit;
             }
         }
     }
 }
 
-$nextInvoice = generateInvoiceNo();
-$pageTitle = 'New Sale Invoice';
+$invoiceNo = $sale['invoice_no'];
+$existingItemsJson = json_encode(array_map(function ($ei) {
+    return [
+        'id' => $ei['item_id'],
+        'name' => $ei['item_name'],
+        'sku' => $ei['item_sku'],
+        'qty' => $ei['qty'],
+        'rate' => $ei['rate'],
+        'discount' => $ei['discount'],
+        'tax_rate' => $ei['tax_rate'],
+        'stock' => $ei['item_stock'],
+    ];
+}, $existingItems));
+$pageTitle = 'Edit Sale Invoice - ' . sanitize($invoiceNo);
 include 'header.php';
 ?>
 
@@ -481,7 +522,7 @@ include 'header.php';
     <div class="row g-3 mb-3">
         <div class="col-md-4">
             <label class="form-label fw-semibold">Invoice No</label>
-            <input type="text" name="invoice_no" class="form-control" value="<?= sanitize($nextInvoice) ?>" readonly>
+            <input type="text" name="invoice_no" class="form-control" value="<?= sanitize($invoiceNo) ?>" readonly>
         </div>
         <div class="col-md-4">
             <label class="form-label fw-semibold">Date</label>
@@ -526,24 +567,47 @@ include 'header.php';
                         </tr>
                     </thead>
                     <tbody id="itemsContainer">
-                        <tr class="item-row" data-index="0">
-                            <td>1</td>
-                            <td>
-                                <input type="hidden" name="item_id[]" class="item-id" value="">
-                                <div class="item-search-wrapper">
-                                    <input type="text" class="form-control form-control-sm item-search" placeholder="Type to search..." autocomplete="off">
-                                    <button type="button" class="clear-item-btn" title="Clear item"><i class="fas fa-times"></i></button>
-                                    <div class="item-search-dropdown"></div>
-                                </div>
-                            </td>
-                            <td><input type="number" name="item_qty[]" class="form-control form-control-sm item-qty" min="1" value="1"></td>
-                            <td><input type="number" name="item_rate[]" class="form-control form-control-sm item-rate" step="0.01" min="0" value="0"></td>
-                            <td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" value="0"></td>
-                            <td><input type="number" name="item_tax[]" class="form-control form-control-sm item-tax" step="0.01" min="0" max="100" value="0"></td>
-                            <td class="text-end fw-bold item-line-tax text-muted">0.00</td>
-                            <td class="text-end fw-bold item-line-total">0.00</td>
-                            <td><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove"><i class="fas fa-times"></i></button></td>
-                        </tr>
+                        <?php if (count($existingItems) > 0): ?>
+                            <?php foreach ($existingItems as $eiIdx => $ei): ?>
+                                <tr class="item-row" data-index="<?= $eiIdx ?>" data-stock="<?= (int) $ei['item_stock'] + (int) $ei['qty'] ?>">
+                                    <td><?= $eiIdx + 1 ?></td>
+                                    <td>
+                                        <input type="hidden" name="item_id[]" class="item-id" value="<?= (int) $ei['item_id'] ?>">
+                                        <div class="item-search-wrapper">
+                                            <input type="text" class="form-control form-control-sm item-search" placeholder="Type to search..." autocomplete="off" value="<?= sanitize($ei['item_name']) ?>" data-selected-name="<?= sanitize($ei['item_name']) ?>">
+                                            <button type="button" class="clear-item-btn show" title="Clear item"><i class="fas fa-times"></i></button>
+                                            <div class="item-search-dropdown"></div>
+                                        </div>
+                                    </td>
+                                    <td><input type="number" name="item_qty[]" class="form-control form-control-sm item-qty" min="1" value="<?= (int) $ei['qty'] ?>"></td>
+                                    <td><input type="number" name="item_rate[]" class="form-control form-control-sm item-rate" step="0.01" min="0" value="<?= sanitize(number_format((float) $ei['rate'], 2, '.', '')) ?>"></td>
+                                    <td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" value="<?= sanitize(number_format((float) $ei['discount'], 2, '.', '')) ?>"></td>
+                                    <td><input type="number" name="item_tax[]" class="form-control form-control-sm item-tax" step="0.01" min="0" max="100" value="<?= (float) $ei['tax_rate'] ?>"></td>
+                                    <td class="text-end fw-bold item-line-tax text-muted">0.00</td>
+                                    <td class="text-end fw-bold item-line-total">0.00</td>
+                                    <td><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove"><i class="fas fa-times"></i></button></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr class="item-row" data-index="0">
+                                <td>1</td>
+                                <td>
+                                    <input type="hidden" name="item_id[]" class="item-id" value="">
+                                    <div class="item-search-wrapper">
+                                        <input type="text" class="form-control form-control-sm item-search" placeholder="Type to search..." autocomplete="off">
+                                        <button type="button" class="clear-item-btn" title="Clear item"><i class="fas fa-times"></i></button>
+                                        <div class="item-search-dropdown"></div>
+                                    </div>
+                                </td>
+                                <td><input type="number" name="item_qty[]" class="form-control form-control-sm item-qty" min="1" value="1"></td>
+                                <td><input type="number" name="item_rate[]" class="form-control form-control-sm item-rate" step="0.01" min="0" value="0"></td>
+                                <td><input type="number" name="item_discount[]" class="form-control form-control-sm item-disc" step="0.01" min="0" value="0"></td>
+                                <td><input type="number" name="item_tax[]" class="form-control form-control-sm item-tax" step="0.01" min="0" max="100" value="0"></td>
+                                <td class="text-end fw-bold item-line-tax text-muted">0.00</td>
+                                <td class="text-end fw-bold item-line-total">0.00</td>
+                                <td><button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Remove"><i class="fas fa-times"></i></button></td>
+                            </tr>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
@@ -1036,7 +1100,7 @@ include 'header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var rowIndex = 1;
+    var rowIndex = document.querySelectorAll('.item-row').length + 1;
 
     function showAlertModal(title, message) {
         document.getElementById('alertModalTitle').textContent = title || 'Error';
@@ -1222,22 +1286,31 @@ document.addEventListener('DOMContentLoaded', function() {
         '<option value="upi">UPI</option>' +
         '<option value="cheque">Cheque</option>';
 
+    var modeApplied = false;
+
     function applySaleMode() {
+        var prevMethod = paymentMethodSel.value;
         if (saleMode.checked) {
-            partySearch.value = '';
-            partyIdField.value = '';
             paymentMethodSel.innerHTML = '<option value="credit" selected>Credit</option>';
+            if (modeApplied) {
+                partySearch.value = '';
+                partyIdField.value = '';
+                paidAmountInput.value = 0;
+            }
             paidAmountInput.readOnly = false;
-            paidAmountInput.value = 0;
         } else {
-            partySearch.value = walkInName;
-            partyIdField.value = walkInId;
             paymentMethodSel.innerHTML = cashMethods;
+            if (prevMethod && prevMethod !== 'credit') paymentMethodSel.value = prevMethod;
+            if (modeApplied) {
+                partySearch.value = walkInName;
+                partyIdField.value = walkInId;
+            }
             paidAmountInput.readOnly = true;
         }
         partyDropdown.classList.remove('show');
         refreshClearParty();
         calcGrand();
+        modeApplied = true;
     }
 
     saleMode.addEventListener('change', applySaleMode);
@@ -1556,8 +1629,8 @@ document.addEventListener('DOMContentLoaded', function() {
         calcGrand();
     });
 
-    // Init first row
-    initItemSearch(document.querySelector('.item-row'));
+    // Init rows
+    document.querySelectorAll('.item-row').forEach(function(row) { initItemSearch(row); });
     calcGrand();
 
     // === Quick Add Item modal: price / profit live calc ===
