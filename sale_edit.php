@@ -258,20 +258,28 @@ include 'header.php';
 .sale-form .item-search-wrapper .clear-item-btn:hover { background: #dc3545; color: #fff; }
 .sale-form .item-search-wrapper .clear-item-btn.show { display: flex; }
 .sale-form .item-search-dropdown {
-    position: fixed; z-index: 1050;
+    position: fixed; z-index: 1080;
     background: #fff; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.12); max-height: 220px; overflow-y: auto; display: none;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12); max-height: 220px; overflow-y: auto; scrollbar-width: thin; display: none;
 }
 .sale-form .item-search-dropdown.show { display: block; }
 .sale-form .item-search-dropdown .dd-head,
 .sale-form .item-search-dropdown .srch-item {
-    display: grid; grid-template-columns: 1fr 92px 100px 90px 85px; gap: 8px; align-items: center;
-    padding: 4px 8px; font-size: 12px; border-bottom: 1px solid #f5f5f5;
+    display: grid; grid-template-columns: 1fr 92px 110px 100px 95px; gap: 6px; align-items: center;
+    padding: 3px 12px; font-size: 12px; border-bottom: 1px solid #f5f5f5;
 }
+.sale-form .item-search-dropdown .dd-head { grid-template-columns: 1fr 92px 110px 100px 95px 26px; }
+.sale-form .item-search-dropdown .dd-close-btn {
+    cursor: pointer; color: #6c757d; font-weight: 700; text-align: center; font-size: 15px; line-height: 1;
+}
+.sale-form .item-search-dropdown .dd-close-btn:hover { color: #dc3545; }
 .sale-form .item-search-dropdown .dd-head {
-    padding-top: 5px; padding-bottom: 5px; font-size: 10px; font-weight: 700;
+    padding: 3px 12px; font-size: 9px; font-weight: 700;
     text-transform: uppercase; letter-spacing: .4px; color: #6c757d;
-    background: #f8f9fa; border-bottom: 1px solid #dee2e6; position: sticky; top: 0;
+    background: #f8f9fa; border-bottom: 1px solid #dee2e6;
+}
+.sale-form .item-search-dropdown .item-dropdown-sticky {
+    position: sticky; top: 0; z-index: 2; background: #fff;
 }
 .sale-form .item-search-dropdown .srch-item { cursor: pointer; }
 .sale-form .item-search-dropdown .srch-item:hover { background: #f0f4ff; }
@@ -286,8 +294,7 @@ include 'header.php';
 .sale-form .item-search-dropdown .no-results { padding: 12px; text-align: center; color: #6c757d; font-size: 13px; }
 .sale-form .item-search-dropdown .qa-link {
     display: block; padding: 7px 10px; font-size: 12px; font-weight: 600; color: #2962FF;
-    cursor: pointer; background: #f8f9fa; border-top: 1px solid #dee2e6; text-align: center;
-    position: sticky; bottom: 0;
+    cursor: pointer; background: #f8f9fa; border-bottom: 1px solid #dee2e6; text-align: center;
 }
 .sale-form .item-search-dropdown .qa-link:hover { background: #eef2ff; }
 .party-search-wrapper { position: relative; }
@@ -1320,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // === Item Search ===
     function positionDropdown(input, dropdown) {
         var r = input.getBoundingClientRect();
-        var w = Math.max(460, Math.min(600, window.innerWidth - r.left - 8));
+        var w = Math.max(720, Math.min(720, window.innerWidth - r.left - 8));
         dropdown.style.top = (r.bottom + 2) + 'px';
         dropdown.style.left = r.left + 'px';
         dropdown.style.width = w + 'px';
@@ -1397,7 +1404,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(function(items) {
                     positionDropdown(searchInput, dropdown);
                     dropdown.innerHTML = '';
+                    var sticky = document.createElement('div');
+                    sticky.className = 'item-dropdown-sticky';
+                    var qa = document.createElement('div');
+                    qa.className = 'qa-link';
+                    qa.innerHTML = '<i class="fas fa-plus me-1"></i> Quick Add Item';
+                    qa.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        openQuickAdd(row, open);
+                    });
+                    sticky.appendChild(qa);
                     if (items.length === 0) {
+                        dropdown.appendChild(sticky);
                         var nr = document.createElement('div');
                         nr.className = 'no-results';
                         nr.textContent = 'No items found';
@@ -1406,7 +1424,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         var head = document.createElement('div');
                         head.className = 'dd-head';
                         head.innerHTML = '<span>Item</span><span>Stock</span><span>HSN</span><span class="si-price">Purchase</span><span class="si-price">Sale</span>';
-                        dropdown.appendChild(head);
+                        sticky.insertBefore(head, sticky.firstChild);
+                        dropdown.appendChild(sticky);
                         items.forEach(function(item) {
                             var d = document.createElement('div');
                             d.className = 'srch-item';
@@ -1425,14 +1444,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             dropdown.appendChild(d);
                         });
                     }
-                    var qa = document.createElement('div');
-                    qa.className = 'qa-link';
-                    qa.innerHTML = '<i class="fas fa-plus me-1"></i> Quick Add Item';
-                    qa.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        openQuickAdd(row, open);
-                    });
-                    dropdown.appendChild(qa);
                     dropdown.classList.add('show');
                 });
         }
@@ -1444,7 +1455,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 row.querySelector('.clear-item-btn').classList.remove('show');
             }
             var q = this.value.trim();
-            if (q.length < 2) { dropdown.classList.remove('show'); return; }
             timer = setTimeout(function() { loadItems(q); }, 300);
         });
 
@@ -1463,7 +1473,12 @@ document.addEventListener('DOMContentLoaded', function() {
         return open;
     }
 
-    window.addEventListener('scroll', closeDropdowns, true);
+    window.addEventListener('scroll', function(e) {
+        if (e.target && e.target.closest && e.target.closest('.item-search-dropdown')) return;
+        closeDropdowns();
+        var ae = document.activeElement;
+        if (ae && ae.blur && ae.closest && (ae.closest('.item-search-wrapper') || ae.closest('.party-search-wrapper'))) ae.blur();
+    }, true);
     window.addEventListener('resize', closeDropdowns);
 
     function r2(v) { return Math.round((v + Number.EPSILON) * 100) / 100; }

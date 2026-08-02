@@ -37,6 +37,7 @@ try {
     $status = isset($_POST['status']) ? 1 : 0;
     $purchaseTaxMode = in_array($_POST['purchase_tax_mode'] ?? '', ['exclusive', 'inclusive']) ? $_POST['purchase_tax_mode'] : 'exclusive';
     $saleTaxMode = in_array($_POST['sale_tax_mode'] ?? '', ['exclusive', 'inclusive']) ? $_POST['sale_tax_mode'] : 'exclusive';
+    $purchaseTaxRateId = intval($_POST['purchase_tax_rate_id'] ?? 0);
 
     if ($name === '') {
         echo json_encode(['error' => 'Item name is required.']);
@@ -88,11 +89,38 @@ try {
         if ($tRow) $taxRate = (float) $tRow['rate'];
     }
 
-    $insert = $pdo->prepare("INSERT INTO items (name, sku, barcode, category_id, description, unit, purchase_price, sale_price, tax_rate_id, purchase_tax_mode, sale_tax_mode, hsn_code, min_stock, current_stock, opening_stock, image, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+    $purchaseTaxRate = 0;
+    if ($purchaseTaxRateId > 0) {
+        $ptStmt = $pdo->prepare("SELECT rate FROM tax_rates WHERE id = ?");
+        $ptStmt->execute([$purchaseTaxRateId]);
+        $ptRow = $ptStmt->fetch(PDO::FETCH_ASSOC);
+        if ($ptRow) $purchaseTaxRate = (float) $ptRow['rate'];
+    }
+
+    $ppInput = $purchasePrice;
+    $spInput = $salePrice;
+
+    if ($purchaseTaxMode === 'inclusive') {
+        $ppBase = $purchaseTaxRate > 0 ? $ppInput / (1 + $purchaseTaxRate / 100) : $ppInput;
+        $ppTotal = $ppInput;
+    } else {
+        $ppBase = $ppInput;
+        $ppTotal = $ppInput + ($ppInput * $purchaseTaxRate / 100);
+    }
+
+    if ($saleTaxMode === 'inclusive') {
+        $spBase = $taxRate > 0 ? $spInput / (1 + $taxRate / 100) : $spInput;
+        $spTotal = $spInput;
+    } else {
+        $spBase = $spInput;
+        $spTotal = $spInput + ($spInput * $taxRate / 100);
+    }
+
+    $insert = $pdo->prepare("INSERT INTO items (name, sku, barcode, category_id, description, unit, purchase_price, purchase_price_with_tax, sale_price, sale_price_with_tax, tax_rate_id, purchase_tax_rate_id, purchase_tax_mode, sale_tax_mode, hsn_code, min_stock, current_stock, opening_stock, image, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
     $insert->execute([
         $name, $sku, $barcode ?: null, $categoryId ?: null,
-        $description ?: null, $unit, $purchasePrice, $salePrice, $taxRateId ?: null,
-        $purchaseTaxMode, $saleTaxMode, $hsnCode ?: null, $minStock,
+        $description ?: null, $unit, $ppBase, $ppTotal, $spBase, $spTotal, $taxRateId ?: null,
+        $purchaseTaxRateId ?: null, $purchaseTaxMode, $saleTaxMode, $hsnCode ?: null, $minStock,
         $openingStock, $openingStock, $imageName, $status
     ]);
     $itemId = (int) $pdo->lastInsertId();
@@ -102,13 +130,16 @@ try {
         'name' => $name,
         'sku' => $sku,
         'barcode' => $barcode,
-        'purchase_price' => number_format($purchasePrice, 2, '.', ''),
-        'sale_price' => number_format($salePrice, 2, '.', ''),
+        'purchase_price' => number_format($ppBase, 2, '.', ''),
+        'purchase_price_with_tax' => number_format($ppTotal, 2, '.', ''),
+        'sale_price' => number_format($spBase, 2, '.', ''),
+        'sale_price_with_tax' => number_format($spTotal, 2, '.', ''),
         'current_stock' => $openingStock,
         'tax_rate_id' => $taxRateId,
         'unit' => $unit,
         'hsn_code' => $hsnCode,
         'tax_rate' => number_format($taxRate, 2, '.', ''),
+        'purchase_tax_rate' => number_format($purchaseTaxRate, 2, '.', ''),
     ]);
 } catch (Exception $e) {
     http_response_code(500);

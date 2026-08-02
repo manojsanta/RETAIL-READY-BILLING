@@ -178,7 +178,7 @@ $companyName = $company['name'] ?? 'Retail Ready';
         </div>
 
         <div class="nav-section">Reports</div>
-        <div class="nav-item has-sub<?php echo in_array($current_page, ['report_sales.php','report_purchase.php','report_profit_loss.php','report_party.php','report_stock.php','report_expense.php','report_daybook.php','report_gst.php']) ? ' open' : ''; ?>">
+        <div class="nav-item has-sub<?php echo in_array($current_page, ['report_sales.php','report_purchase.php','report_profit_loss.php','report_party.php','report_stock.php','report_expense.php','report_daybook.php','report_cashbook.php','report_gst.php']) ? ' open' : ''; ?>">
             <button class="nav-toggle" onclick="toggleSub(this)">
                 <i class="fas fa-chart-pie"></i><span>Reports</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
             </button>
@@ -203,6 +203,9 @@ $companyName = $company['name'] ?? 'Retail Ready';
                 </div>
                 <div class="nav-item<?php echo $current_page === 'report_daybook.php' ? ' active' : ''; ?>">
                     <a href="report_daybook.php"><i class="fas fa-book"></i><span>Day Book</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'report_cashbook.php' ? ' active' : ''; ?>">
+                    <a href="report_cashbook.php"><i class="fas fa-book-open"></i><span>Cash & Bank Book</span></a>
                 </div>
                 <div class="nav-item<?php echo $current_page === 'report_gst.php' ? ' active' : ''; ?>">
                     <a href="report_gst.php"><i class="fas fa-file-alt"></i><span>GST Reports</span></a>

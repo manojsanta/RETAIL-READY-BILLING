@@ -1,7 +1,12 @@
 <?php
 require_once 'db.php';
 require_once 'functions.php';
+require_once 'vendor/autoload.php';
 requireLogin();
+
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 
 $activeTab = $_GET['tab'] ?? 'gstr3b';
 $selectedMonth = $_GET['month'] ?? date('Y-m');
@@ -76,6 +81,97 @@ $totalPurchaseTax = $b2bPurchasesTax + $b2cPurchasesTax;
 
 $taxPayable = $totalSalesTax - $totalPurchaseTax;
 
+// Excel Export (multi-sheet XLSX)
+function gstSheet($spreadsheet, $title, $headers, $rows) {
+    $ws = $spreadsheet->createSheet();
+    $ws->setTitle($title);
+    $ws->fromArray($headers, null, 'A1');
+    if (!empty($rows)) {
+        $ws->fromArray($rows, null, 'A2');
+    }
+    $lastCol = $ws->getHighestColumn();
+    $headerStyle = $ws->getStyle('A1:' . $lastCol . '1');
+    $headerStyle->getFont()->setBold(true);
+    $headerStyle->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('FFF0F0F0');
+    foreach (range('A', $lastCol) as $col) {
+        $ws->getColumnDimension($col)->setAutoSize(true);
+    }
+}
+
+if (isset($_GET['export']) && $_GET['export'] === 'xlsx') {
+    $spreadsheet = new Spreadsheet();
+    $spreadsheet->removeSheetByIndex(0);
+    $spreadsheet->getProperties()->setCreator('Retail Ready')->setTitle('GST Report ' . $selectedMonth);
+
+    if ($activeTab === 'gstr1') {
+        $b2bRows = [];
+        foreach ($b2bSales as $bs) {
+            $b2bRows[] = [$bs['invoice_no'], $bs['date'], $bs['party_name'], $bs['gstin'], (float)$bs['total'], (float)$bs['subtotal'] - (float)$bs['discount_amount'], round((float)$bs['tax_amount'] / 2, 2), round((float)$bs['tax_amount'] / 2, 2), 0];
+        }
+        $b2cRows = [];
+        foreach ($b2cSales as $bc) {
+            $b2cRows[] = [$bc['invoice_no'], $bc['date'], $bc['party_name'] ?: 'Walk-in', (float)$bc['total'], (float)$bc['subtotal'] - (float)$bc['discount_amount'], round((float)$bc['tax_amount'] / 2, 2), round((float)$bc['tax_amount'] / 2, 2), 0];
+        }
+        $hsnRows = [];
+        foreach ($hsnSales as $hs) {
+            $hsnRows[] = [$hs['hsn_code'] ?: 'N/A', $hs['item_name'], $hs['unit'] ?: 'NOS', (float)$hs['total_qty'], (float)$hs['total_value'], (float)$hs['taxable_value'], (float)$hs['cgst'], (float)$hs['sgst'], (float)$hs['igst']];
+        }
+        gstSheet($spreadsheet, 'B2B Sales', ['Invoice No', 'Date', 'Party', 'GSTIN', 'Invoice Value', 'Taxable Value', 'CGST', 'SGST', 'IGST'], $b2bRows);
+        gstSheet($spreadsheet, 'B2C Sales', ['Invoice No', 'Date', 'Party', 'Invoice Value', 'Taxable Value', 'CGST', 'SGST', 'IGST'], $b2cRows);
+        gstSheet($spreadsheet, 'HSN Summary', ['HSN Code', 'Description', 'UQC', 'Total Qty', 'Total Value', 'Taxable Value', 'CGST', 'SGST', 'IGST'], $hsnRows);
+        $filename = 'gstr1_' . $selectedMonth;
+    } elseif ($activeTab === 'gstr2') {
+        $b2bRows = [];
+        foreach ($b2bPurchases as $bp) {
+            $b2bRows[] = [$bp['bill_no'], $bp['date'], $bp['party_name'], $bp['gstin'], (float)$bp['total'], (float)$bp['subtotal'] - (float)$bp['discount_amount'], round((float)$bp['tax_amount'] / 2, 2), round((float)$bp['tax_amount'] / 2, 2), 0, 'Yes'];
+        }
+        $b2cRows = [];
+        foreach ($b2cPurchases as $bp) {
+            $b2cRows[] = [$bp['bill_no'], $bp['date'], $bp['party_name'] ?: '-', (float)$bp['total'], (float)$bp['subtotal'] - (float)$bp['discount_amount'], round((float)$bp['tax_amount'] / 2, 2), round((float)$bp['tax_amount'] / 2, 2), 0, 'No'];
+        }
+        $hsnRows = [];
+        foreach ($hsnPurchases as $hp) {
+            $hsnRows[] = [$hp['hsn_code'] ?: 'N/A', $hp['item_name'], $hp['unit'] ?: 'NOS', (float)$hp['total_qty'], (float)$hp['total_value'], (float)$hp['taxable_value'], (float)$hp['cgst'], (float)$hp['sgst'], (float)$hp['igst']];
+        }
+        gstSheet($spreadsheet, 'B2B Purchases', ['Bill No', 'Date', 'Supplier', 'GSTIN', 'Invoice Value', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'ITC Eligible'], $b2bRows);
+        gstSheet($spreadsheet, 'B2C Purchases', ['Bill No', 'Date', 'Supplier', 'Invoice Value', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'ITC Eligible'], $b2cRows);
+        gstSheet($spreadsheet, 'HSN Summary', ['HSN Code', 'Description', 'UQC', 'Total Qty', 'Total Value', 'Taxable Value', 'CGST', 'SGST', 'IGST'], $hsnRows);
+        $filename = 'gstr2_' . $selectedMonth;
+    } else {
+        $outward = [
+            ['(a) Outward taxable supplies', (float)$b2bSalesTotal + (float)$b2cSalesTotal, 0, round($totalSalesTax / 2, 2), round($totalSalesTax / 2, 2), 0],
+            ['(b) Outward taxable supplies (zero rated)', 0, 0, 0, 0, 0],
+            ['(c) Other outward supplies (Nil rated, exempted)', 0, 0, 0, 0, 0],
+            ['Total Outward Supplies', (float)$b2bSalesTotal + (float)$b2cSalesTotal, 0, round($totalSalesTax / 2, 2), round($totalSalesTax / 2, 2), 0],
+        ];
+        $inward = [
+            ['(1) Import of goods', 0, 0, 0, 0, 0],
+            ['(2) Import of services', 0, 0, 0, 0, 0],
+            ['(3) Inward supplies liable to reverse charge', 0, 0, 0, 0, 0],
+            ['(4) Inward supplies from ISD', 0, 0, 0, 0, 0],
+            ['(5) All other ITC eligible inward supplies', (float)$b2bPurchasesTotal + (float)$b2cPurchasesTotal, 0, round($totalPurchaseTax / 2, 2), round($totalPurchaseTax / 2, 2), 0],
+            ['Total Inward Supplies (Eligible ITC)', (float)$b2bPurchasesTotal + (float)$b2cPurchasesTotal, 0, round($totalPurchaseTax / 2, 2), round($totalPurchaseTax / 2, 2), 0],
+        ];
+        $taxable = [
+            ['Output Tax (Sales)', 0, round($totalSalesTax / 2, 2), round($totalSalesTax / 2, 2), 0],
+            ['Less: Input Tax Credit', 0, round($totalPurchaseTax / 2, 2), round($totalPurchaseTax / 2, 2), 0],
+            ['Net Tax Payable', 0, round(max(0, ($totalSalesTax - $totalPurchaseTax) / 2), 2), round(max(0, ($totalSalesTax - $totalPurchaseTax) / 2), 2), 0],
+        ];
+        gstSheet($spreadsheet, '3.1 Outward', ['Description', 'Taxable Value', 'IGST', 'CGST', 'SGST', 'Cess'], $outward);
+        gstSheet($spreadsheet, '3.2 Inward', ['Description', 'Taxable Value', 'IGST', 'CGST', 'SGST', 'Cess'], $inward);
+        gstSheet($spreadsheet, '6.1 Tax Payable', ['Description', 'IGST', 'CGST', 'SGST', 'Cess'], $taxable);
+        $filename = 'gstr3b_' . $selectedMonth;
+    }
+
+    while (ob_get_level()) ob_end_clean();
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '.xlsx"');
+    header('Cache-Control: max-age=0');
+    $writer = new Xlsx($spreadsheet);
+    $writer->save('php://output');
+    exit;
+}
+
 $pageTitle = 'GST Reports';
 include 'header.php';
 ?>
@@ -87,7 +183,8 @@ include 'header.php';
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h5 class="mb-0">GST Reports</h5>
-    <div>
+    <div class="d-flex gap-2">
+        <a href="?tab=<?= sanitize($activeTab) ?>&month=<?= sanitize($selectedMonth) ?>&export=xlsx" class="btn btn-success btn-sm"><i class="fas fa-file-excel me-1"></i>Export Excel</a>
         <button onclick="window.print()" class="btn btn-outline-secondary btn-sm"><i class="fas fa-print me-1"></i>Print</button>
     </div>
 </div>
