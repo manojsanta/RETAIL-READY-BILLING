@@ -302,5 +302,16 @@ function closeSidebar(){
 window.addEventListener('resize',function(){
     if(window.innerWidth>=992){closeSidebar();document.body.style.overflow='';}
 });
-document.addEventListener('DOMContentLoaded',function(){initSubs();});
+document.addEventListener('DOMContentLoaded',function(){
+    initSubs();
+    <?php if (in_array($current_page, ['purchase_add.php','purchase_edit.php','sale_add.php','sale_edit.php'])): ?>
+    if(window.innerWidth>=992){
+        var sb=document.getElementById('sidebar');
+        sb.classList.add('collapsed');
+        document.body.classList.add('sidebar-collapsed');
+        var all=sb.querySelectorAll('.submenu');
+        for(var i=0;i<all.length;i++){all[i].style.maxHeight='0px';}
+    }
+    <?php endif; ?>
+});
 </script>
