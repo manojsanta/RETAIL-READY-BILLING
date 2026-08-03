@@ -178,7 +178,7 @@ $companyName = $company['name'] ?? 'Retail Ready';
         </div>
 
         <div class="nav-section">Reports</div>
-        <div class="nav-item has-sub<?php echo in_array($current_page, ['report_sales.php','report_purchase.php','report_profit_loss.php','report_balance_sheet.php','report_party.php','report_stock.php','report_expense.php','report_daybook.php','report_cashbook.php','report_gst.php']) ? ' open' : ''; ?>">
+        <div class="nav-item has-sub<?php echo in_array($current_page, ['report_sales.php','report_purchase.php','report_profit_loss.php','report_balance_sheet.php','report_trial_balance.php','report_party.php','report_stock.php','report_expense.php','report_daybook.php','report_cashbook.php','report_gst.php']) ? ' open' : ''; ?>">
             <button class="nav-toggle" onclick="toggleSub(this)">
                 <i class="fas fa-chart-pie"></i><span>Reports</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
             </button>
@@ -194,6 +194,9 @@ $companyName = $company['name'] ?? 'Retail Ready';
                 </div>
                 <div class="nav-item<?php echo $current_page === 'report_balance_sheet.php' ? ' active' : ''; ?>">
                     <a href="report_balance_sheet.php"><i class="fas fa-balance-scale"></i><span>Balance Sheet</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'report_trial_balance.php' ? ' active' : ''; ?>">
+                    <a href="report_trial_balance.php"><i class="fas fa-columns"></i><span>Trial Balance</span></a>
                 </div>
                 <div class="nav-item<?php echo $current_page === 'report_party.php' ? ' active' : ''; ?>">
                     <a href="report_party.php"><i class="fas fa-address-card"></i><span>Party Report</span></a>
