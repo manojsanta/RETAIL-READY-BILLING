@@ -163,7 +163,7 @@ $companyName = $company['name'] ?? 'Retail Ready';
 
         
         <div class="nav-section">Finance</div>
-        <div class="nav-item has-sub<?php echo in_array($current_page, ['expenses.php','cash_bank.php']) ? ' open' : ''; ?>">
+        <div class="nav-item has-sub<?php echo in_array($current_page, ['expenses.php','cash_bank.php','fy_closing.php','financial_year_manage.php']) ? ' open' : ''; ?>">
             <button class="nav-toggle" onclick="toggleSub(this)">
                 <i class="fas fa-receipt"></i><span>Finance</span><i class="fas fa-plus toggle-icon" style="font-size:10px;"></i>
             </button>
@@ -173,6 +173,12 @@ $companyName = $company['name'] ?? 'Retail Ready';
                 </div>
                 <div class="nav-item<?php echo $current_page === 'cash_bank.php' ? ' active' : ''; ?>">
                     <a href="cash_bank.php"><i class="fas fa-university"></i><span>Cash & Bank</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'fy_closing.php' ? ' active' : ''; ?>">
+                    <a href="fy_closing.php"><i class="fas fa-calendar-check"></i><span>FY Closing</span></a>
+                </div>
+                <div class="nav-item<?php echo $current_page === 'financial_year_manage.php' ? ' active' : ''; ?>">
+                    <a href="financial_year_manage.php"><i class="fas fa-calendar-alt"></i><span>Financial Years</span></a>
                 </div>
             </div>
         </div>
