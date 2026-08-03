@@ -92,6 +92,11 @@ include 'header.php';
 
 <style>
 .report-quick-btns .btn { font-size: 0.8rem; padding: 0.25rem 0.6rem; }
+.party-table { font-size: 0.8rem; }
+.party-table th, .party-table td { padding: 0.3rem 0.5rem; white-space: nowrap; }
+.party-table thead th { font-size: 0.72rem; }
+.party-table .party-name { max-width: 220px; white-space: normal; }
+.party-table .party-sub { font-size: 0.7rem; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -107,7 +112,7 @@ include 'header.php';
     <div class="col-md-4">
         <div class="card border-0 shadow-sm">
             <div class="card-body text-center py-3">
-                <small class="text-muted d-block">Total Receivable (Customers)</small>
+                <small class="text-muted d-block">Total To Receive</small>
                 <h4 class="mb-0 text-success"><?= money($totalReceivable) ?></h4>
                 <small class="text-muted"><?= count(array_filter($parties, function($p) { return $p['current_balance'] > 0; })) ?> parties</small>
             </div>
@@ -116,7 +121,7 @@ include 'header.php';
     <div class="col-md-4">
         <div class="card border-0 shadow-sm">
             <div class="card-body text-center py-3">
-                <small class="text-muted d-block">Total Payable (Suppliers)</small>
+                <small class="text-muted d-block">Total To Pay</small>
                 <h4 class="mb-0 text-danger"><?= money($totalPayable) ?></h4>
                 <small class="text-muted"><?= count(array_filter($parties, function($p) { return $p['current_balance'] < 0; })) ?> parties</small>
             </div>
@@ -164,7 +169,7 @@ include 'header.php';
 <!-- Table -->
 <div class="card mb-4">
     <div class="table-responsive">
-        <table class="table table-hover mb-0">
+        <table class="table table-sm table-hover mb-0 party-table">
             <thead class="table-light">
                 <tr>
                     <th>#</th>
@@ -186,8 +191,8 @@ include 'header.php';
                         <tr>
                             <td><?= $idx + 1 ?></td>
                             <td>
-                                <a href="party_view.php?id=<?= $pr['id'] ?>" class="fw-semibold text-decoration-none"><?= sanitize($pr['name']) ?></a>
-                                <br><small class="text-muted"><?= ucfirst(sanitize($pr['type'])) ?></small>
+                                <a href="party_view.php?id=<?= $pr['id'] ?>" class="fw-semibold text-decoration-none party-name"><?= sanitize($pr['name']) ?></a>
+                                <br><small class="text-muted party-sub"><?= ucfirst(sanitize($pr['type'])) ?></small>
                             </td>
                             <td><?= sanitize($pr['phone'] ?: '-') ?></td>
                             <td class="text-end"><?= money($pr['total_sales']) ?></td>
@@ -199,11 +204,7 @@ include 'header.php';
                             </td>
                             <td class="text-end fw-bold <?= $pr['current_balance'] >= 0 ? 'text-success' : 'text-danger' ?>">
                                 <?= money(abs($pr['current_balance'])) ?>
-                                <?php if ($pr['current_balance'] > 0): ?>
-                                    <small class="text-success">(Dr)</small>
-                                <?php elseif ($pr['current_balance'] < 0): ?>
-                                    <small class="text-danger">(Cr)</small>
-                                <?php endif; ?>
+                                <small><?= $pr['current_balance'] > 0 ? 'To Receive' : ($pr['current_balance'] < 0 ? 'To Pay' : '') ?></small>
                             </td>
                         </tr>
                     <?php endforeach; ?>

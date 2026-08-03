@@ -438,23 +438,25 @@ function getPartyBalance($partyId) {
 
     $opening = (float) $party['opening_balance'];
 
-    $salesDueVal = (float) query(
-        "SELECT COALESCE(SUM(due_amount), 0) FROM sales WHERE party_id = ? AND payment_status != 'paid'",
+    $salesTotal = (float) query(
+        "SELECT COALESCE(SUM(total), 0) FROM sales WHERE party_id = ? AND status != 'cancelled'",
         [$partyId]
     )->fetchColumn();
 
-    $purchasesDueVal = (float) query(
-        "SELECT COALESCE(SUM(due_amount), 0) FROM purchases WHERE party_id = ? AND payment_status != 'paid'",
+    $purchasesTotal = (float) query(
+        "SELECT COALESCE(SUM(total), 0) FROM purchases WHERE party_id = ? AND status != 'cancelled'",
         [$partyId]
     )->fetchColumn();
 
     $paymentsInVal = (float) query(
-        "SELECT COALESCE(SUM(amount), 0) FROM payments_in WHERE party_id = ?",
+        "SELECT COALESCE(SUM(amount), 0) FROM payments_in WHERE party_id = ?
+         AND (sale_id IS NULL OR sale_id IN (SELECT id FROM sales WHERE status != 'cancelled'))",
         [$partyId]
     )->fetchColumn();
 
     $paymentsOutVal = (float) query(
-        "SELECT COALESCE(SUM(amount), 0) FROM payments_out WHERE party_id = ?",
+        "SELECT COALESCE(SUM(amount), 0) FROM payments_out WHERE party_id = ?
+         AND (purchase_id IS NULL OR purchase_id IN (SELECT id FROM purchases WHERE status != 'cancelled'))",
         [$partyId]
     )->fetchColumn();
 
@@ -463,8 +465,8 @@ function getPartyBalance($partyId) {
         $opening = -$opening;
     }
 
-    // Balance = opening + sales they owe us - purchases we owe them + payments received - payments made
-    $balance = $opening + $salesDueVal - $purchasesDueVal + $paymentsInVal - $paymentsOutVal;
+    // Balance = opening + total sales - payments received - total purchases + payments made
+    $balance = $opening + $salesTotal - $paymentsInVal - $purchasesTotal + $paymentsOutVal;
 
     return round($balance, 2);
 }

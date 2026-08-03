@@ -21,10 +21,8 @@ $totalPaymentsIn = (float)(fetch("SELECT COALESCE(SUM(amount),0) as t FROM payme
 $totalPaymentsOut = (float)(fetch("SELECT COALESCE(SUM(amount),0) as t FROM payments_out WHERE party_id = ?", [$party['id']])['t'] ?? 0);
 $openingBalance = (float)($party['opening_balance'] ?? 0);
 
-$salesDueVal = (float)(fetch("SELECT COALESCE(SUM(due_amount),0) as t FROM sales WHERE party_id = ? AND status != 'cancelled'", [$party['id']])['t'] ?? 0);
-$purchasesDueVal = (float)(fetch("SELECT COALESCE(SUM(due_amount),0) as t FROM purchases WHERE party_id = ? AND status != 'cancelled'", [$party['id']])['t'] ?? 0);
-$receivable = round(max(0, $openingBalance) + $salesDueVal, 2);
-$payable = round(max(0, -$openingBalance) + $purchasesDueVal, 2);
+$receivable = round(max(0, $balance), 2);
+$payable = round(max(0, -$balance), 2);
 
 $transactions = fetchAll("
     SELECT 'sale' as source, id, date, invoice_no as ref_no, subtotal, tax_amount, total, paid_amount, due_amount, status, NULL as pay_type, NULL as pay_method, NULL as pay_amount
@@ -176,7 +174,7 @@ include 'header.php';
     <div class="col-md-3">
         <div class="card border-0 bg-light">
             <div class="card-body text-center py-2">
-                <small class="text-muted"><i class="fas fa-arrow-down me-1 text-success"></i>You'll Receive (Receivable)</small>
+                <small class="text-muted"><i class="fas fa-arrow-down me-1 text-success"></i>To Receive</small>
                 <div class="fw-bold text-success"><?php echo money($receivable); ?></div>
             </div>
         </div>
@@ -184,7 +182,7 @@ include 'header.php';
     <div class="col-md-3">
         <div class="card border-0 bg-light">
             <div class="card-body text-center py-2">
-                <small class="text-muted"><i class="fas fa-arrow-up me-1 text-danger"></i>You'll Pay (Payable)</small>
+                <small class="text-muted"><i class="fas fa-arrow-up me-1 text-danger"></i>To Pay</small>
                 <div class="fw-bold text-danger"><?php echo money($payable); ?></div>
             </div>
         </div>
